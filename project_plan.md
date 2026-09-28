@@ -91,6 +91,8 @@ refused and the header shows *Guardian Offline*; the arena never scans
 
 ## 3. The arena experience (UI)
 
+Design mockups (Lobby, Live match, Orbit view, Results): K9X Arena Design canvas.
+
 Same visual family as the K9X Studio landing page (dark navy, teal and
 amber, subtle background artwork), but staged like a sports broadcast:
 contenders, a live match, a scoreboard.
@@ -126,6 +128,11 @@ contenders, a live match, a scoreboard.
 - A "GPU swap" marker whenever Ollama unloads one model for another, so
   swap cost is visible, not hidden in latency.
 - Items sent to human review show a *Pending HIL* badge until decided.
+- **Orbit view** (toggle: Lanes | Orbit): the Intelligent Model Router as a
+  glowing core inside a pulsing Granite Guardian ring, contenders and the judge
+  orbiting it; neon teal dots stream out to the model on the GPU and amber
+  dots stream back with its answer. The lit beam is always the real active
+  model; orbits are decorative. Still under `prefers-reduced-motion`.
 
 ### 3.5 Results
 - **Star grid:** contenders × task types, 1–5 stars, with the score on hover.
