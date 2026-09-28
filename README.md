@@ -12,4 +12,3 @@ to generate the K9-AIF scaffold, then implement the graders and the report UI.
 
 Part of the [K9X ecosystem](https://github.com/k9aif/k9x-ecosystem), built on
 the [K9-AIF framework](https://github.com/k9aif/k9-aif-framework).
-# k9x-arena
