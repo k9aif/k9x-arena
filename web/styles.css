@@ -183,6 +183,9 @@ table.grid tr.click { cursor: pointer; } table.grid tr.click:hover td { backgrou
 .kpi .v { display: flex; align-items: baseline; gap: 10px; margin-top: 2px; }
 .kpi .big { font-family: var(--display); font-size: 28px; font-weight: 700; }
 .results { display: grid; grid-template-columns: minmax(0, 1fr) 520px; gap: 20px; }
+@media (max-width: 1360px) { .results { grid-template-columns: minmax(0, 1fr); } }
+.results .panel { min-width: 0; }
+.scroll-x { overflow-x: auto; }
 .cell { padding: 8px 10px; border-radius: 10px; display: flex; flex-direction: column; gap: 2px; background: var(--bg-2); border: 1px solid var(--line-soft); }
 .cell.best { background: var(--panel-2); border-color: var(--line-teal); }
 .cell .n { font-family: var(--display); font-size: 20px; font-weight: 600; }
