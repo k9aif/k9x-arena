@@ -96,7 +96,7 @@ refused and the header shows *Guardian Offline*; the arena never scans
 
 ## 3. The arena experience (UI)
 
-Design mockups (Lobby, Live match, Orbit view, Results): K9X Arena Design canvas.
+Design mockups (Lobby, Live match, Results): K9X Arena Design canvas. The live match's second view became the K9X Octagon (below).
 
 Same visual family as the K9X Studio landing page (dark navy, teal and
 amber, subtle background artwork), but staged like a sports broadcast:
@@ -133,11 +133,12 @@ contenders, a live match, a scoreboard.
 - A "GPU swap" marker whenever Ollama unloads one model for another, so
   swap cost is visible, not hidden in latency.
 - Items sent to human review show a *Pending HIL* badge until decided.
-- **Orbit view** (toggle: Lanes | Orbit): the Intelligent Model Router as a
-  glowing core inside a pulsing Granite Guardian ring, contenders and the judge
-  orbiting it; neon teal dots stream out to the model on the GPU and amber
-  dots stream back with its answer. The lit beam is always the real active
-  model; orbits are decorative. Still under `prefers-reduced-motion`.
+- **The K9X Octagon** (toggle: Lanes | Octagon): a top-down cage whose border
+  is the Granite Guardian ring; the Intelligent Model Router is the K9X mat at
+  center stage; contenders hold fixed corners (the one answering is
+  spotlighted, with teal request and amber answer dashes to the center); the
+  judges' table sits cageside; the crowd fills the stands with camera flashes.
+  Still under `prefers-reduced-motion`.
 
 ### 3.5 Results
 - **Star grid:** contenders × task types, 1–5 stars, with the score on hover.
@@ -217,7 +218,7 @@ contenders, a live match, a scoreboard.
 ## 8. Built vs. next
 
 **Built (v0.1):** everything in phases 0–4, plus history, the review queue,
-uploads with mandatory Guardian scanning, the Lanes and Orbit live views, and
+uploads with mandatory Guardian scanning, the Lanes and Octagon live views, and
 an Architecture tab.
 
 **Next:**

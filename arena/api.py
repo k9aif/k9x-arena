@@ -318,8 +318,9 @@ def _lanes(m: Dict[str, Any], tasks: List[Dict[str, Any]], runs: List[Dict[str, 
     for model in m["contenders"]:
         rs = [r for r in runs if r["mode"] == "forced" and r["model"] == model]
         graded = [scores[r["id"]]["score"] for r in rs if r["id"] in scores]
-        state = "done" if len(rs) >= per_model_total else ("answering" if current and current.get("model") == model
-                                                          else ("waiting" if rs else "queued"))
+        state = ("done" if per_model_total and len(rs) >= per_model_total
+                 else "answering" if current and current.get("model") == model
+                 else "waiting" if rs else "queued")
         recent = []
         for r in rs[-4:][::-1]:
             t = titles.get(r["task_id"], {})

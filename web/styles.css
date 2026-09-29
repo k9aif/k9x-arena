@@ -206,7 +206,7 @@ pre.yaml { margin: 0; padding: 12px 14px; border-radius: 10px; background: var(-
 .nav a, .userbtn, .pill { white-space: nowrap; }
 .pill.gpu { max-width: 260px; overflow: hidden; text-overflow: ellipsis; display: inline-block; }
 .top { gap: 20px; }
-@media (max-width: 1280px) { .pill.gpu { display: none; } }
+@media (max-width: 1520px) { .pill.gpu { display: none; } }
 
 /* winner celebration */
 .celebration { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse 50% 45% at 50% 45%, #3a2f1299 0%, #04060df2 70%); animation: cele-in .35s ease; }
@@ -229,3 +229,36 @@ pre.yaml { margin: 0; padding: 12px 14px; border-radius: 10px; background: var(-
 
 /* wrap long YAML lines on screen (Copy/Download keep the exact text) */
 pre.yaml { white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: hidden; }
+
+/* the K9X Octagon */
+.octagon-view { position: relative; height: calc(100vh - 72px); min-height: 760px; background: #04060d; overflow: hidden; }
+.octagon { position: absolute; inset: 0; width: 100%; height: 100%; }
+.octagon .cage { filter: drop-shadow(0 0 18px #2dd4bf55); animation: cagepulse 3.2s ease-in-out infinite; }
+.octagon .flash { animation: flash 5s ease-in-out infinite; }
+.octagon .guardlabel { fill: #5eead4; font: 600 12px var(--sans); letter-spacing: 3px; }
+.octagon .matlogo { fill: #e6fffb; font: 700 44px var(--display); letter-spacing: 2px; }
+.octagon .matsub { fill: #9fe7dc; font: 12px var(--sans); }
+.octagon .mat { animation: pulse 3s ease-in-out infinite; }
+.octagon .corner { fill: #12302f; stroke: #2dd4bf; stroke-width: 2; }
+.octagon .fighter.active .corner { fill: #2dd4bf; filter: drop-shadow(0 0 16px #2dd4bf); }
+.octagon .spot { fill: #2dd4bf; opacity: .12; animation: spot 1.8s ease-in-out infinite; }
+.octagon .ini { fill: #5eead4; font: 700 22px var(--display); }
+.octagon .fighter.active .ini { fill: #04221f; }
+.octagon .fname { fill: #e6edf5; font: 500 14px var(--mono); }
+.octagon .fstate { fill: #93a3b8; font: 12px var(--sans); }
+.octagon .fighter.active .fstate { fill: #5eead4; }
+.octagon .beam-out { stroke: #5eead4; stroke-width: 4; stroke-linecap: round; stroke-dasharray: 3 16; filter: drop-shadow(0 0 6px #2dd4bf); animation: dash 0.9s linear infinite; }
+.octagon .beam-back { stroke: #ffd166; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 2 18; filter: drop-shadow(0 0 6px #ffd166); animation: dash 1.2s linear infinite; }
+.octagon .judges rect { fill: #1d180b; stroke: #4a3d1a; }
+.octagon .judges text { fill: #ffd166; font: 600 12px var(--sans); letter-spacing: 1.5px; }
+.octagon .judges.active rect { stroke: #ffd166; filter: drop-shadow(0 0 12px #ffd16688); }
+@keyframes dash { to { stroke-dashoffset: -38; } }
+@keyframes flash { 0%, 92%, 100% { opacity: .2 } 95% { opacity: 1 } }
+@keyframes spot { 0%, 100% { opacity: .08 } 50% { opacity: .2 } }
+@keyframes cagepulse { 0%, 100% { stroke-opacity: .45 } 50% { stroke-opacity: .8 } }
+@media (prefers-reduced-motion: reduce) { .octagon .cage, .octagon .flash, .octagon .mat, .octagon .spot, .octagon .beam-out, .octagon .beam-back { animation: none !important; } }
+
+/* header + octagon HUD fit */
+.brand span { white-space: nowrap; }
+.hud .row { flex-wrap: wrap; }
+.hud .btn { height: 38px; padding: 0 12px; font-size: 13px; white-space: nowrap; }

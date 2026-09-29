@@ -71,7 +71,7 @@ async function route() {
   try {
     switch (parts[0]) {
       case 'login': return renderLogin();
-      case 'match': return renderMatch(+parts[1], parts[2] === 'orbit' ? 'orbit' : 'lanes');
+      case 'match': return renderMatch(+parts[1], ['octagon', 'orbit'].includes(parts[2]) ? 'octagon' : 'lanes');
       case 'results': return renderResults(+parts[1]);
       case 'task': return renderTask(+parts[1], decodeURIComponent(parts[2] || ''));
       case 'history': return renderHistory();
@@ -270,7 +270,7 @@ async function renderMatch(id, view) {
   const load = async () => { S.match = await api(`/api/matches/${id}`); };
   try { await load(); } catch (e) { app.innerHTML = header('match') + `<main class="page"><div class="banner">${esc(e.message)}</div></main>`; return; }
   S.lastMatch = id;
-  const draw = () => (view === 'orbit' ? drawOrbit() : drawLanes());
+  const draw = () => (view === 'octagon' ? drawOctagon() : drawLanes());
   draw();
   S.es = new EventSource(`/api/matches/${id}/stream`);
   S.es.onmessage = (msg) => {
@@ -330,7 +330,7 @@ function drawLanes() {
     <div class="matchhead">
       <div style="flex-grow:1"><div class="row">${live ? '<span class="live"><span class="dot"></span>LIVE</span>' : statusBadge(m.status)}<h1>Match #${m.id} · ${esc(m.suite_name)}</h1></div>
         <div class="muted" style="font-size:14px;margin-top:4px">${m.runs_per_task} runs per task · judge <span class="mono">${esc(m.judge)}</span> · router mode ${m.router_mode ? 'on' : 'off'} · ${ans} of ${tot} answers</div></div>
-      <div class="viewswitch" role="group" aria-label="View"><a href="#/match/${m.id}" aria-current="page">Lanes</a><a href="#/match/${m.id}/orbit">Orbit</a></div>
+      <div class="viewswitch" role="group" aria-label="View"><a href="#/match/${m.id}" aria-current="page">Lanes</a><a href="#/match/${m.id}/octagon">Octagon</a></div>
       ${matchControls(m)}
     </div>
     <div class="phases" aria-label="Match phases">${phases}</div>
@@ -338,40 +338,75 @@ function drawLanes() {
     <section class="ticker" aria-label="Trace events">${events || '<span class="muted">Waiting for events…</span>'}</section>
   </main>`;
 }
-function drawOrbit() {
+function drawOctagon() {
   const D = S.match, m = D.match; const cur = D.current || {};
-  const who = [...m.contenders.map((t) => ({ tag: t, judge: false })), { tag: m.judge, judge: true }];
-  let seed = 7; const rand = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
-  const stars = Array.from({ length: 110 }, () => { const s = rand() < 0.85 ? 1.5 : 2.5; return `<span class="star" style="left:${(rand() * 100).toFixed(2)}%;top:${(rand() * 100).toFixed(2)}%;width:${s}px;height:${s}px;animation-delay:-${(rand() * 4).toFixed(2)}s"></span>`; }).join('');
-  const base = 170, step = Math.min(78, 250 / Math.max(1, who.length - 1));
-  const rings = who.map((w, i) => {
-    const r = Math.round(base + i * step); const period = 70 + i * 28; const delay = -(period * ((i * 0.37 + 0.1) % 1));
-    const active = (w.judge && cur.model === 'judge') || (!w.judge && cur.model === w.tag);
-    const lane = D.lanes.find((l) => l.model === w.tag);
-    const role = w.judge ? (active ? 'Judge · judging' : 'Judge') : (active ? 'Contender · answering' : lane ? ({ done: 'Contender · done', waiting: 'Contender · waiting', queued: 'Contender · queued' }[lane.state] || 'Contender') : 'Contender');
-    return `<div class="ring ${w.judge ? 'judge' : ''} ${active ? 'active' : ''}" style="left:${-r}px;top:${-r}px;width:${2 * r}px;height:${2 * r}px;animation-duration:${period}s;animation-delay:${delay}s">
-      <div class="beam" style="width:${r}px">${active ? '<span class="dot-out"></span><span class="dot-out" style="animation-delay:-.55s"></span><span class="dot-out" style="animation-delay:-1.1s"></span><span class="dot-back" style="animation-delay:-.3s"></span><span class="dot-back" style="animation-delay:-1.2s"></span>' : ''}</div>
-      <div class="anchor"><div class="planet" style="animation-duration:${period}s;animation-delay:${delay}s"><div class="orb">${esc(initials(w.tag))}</div><div class="pname">${esc(w.tag)}</div><div class="prole">${esc(role)}</div></div></div></div>`;
-  }).join('');
+  const W = 1400, H = 860, cx = 700, cy = 440, R = 300;
+  const oct = (r) => Array.from({ length: 8 }, (_, k) => { const a = (Math.PI / 8) + k * Math.PI / 4; return `${(cx + r * Math.cos(a)).toFixed(1)},${(cy + r * Math.sin(a)).toFixed(1)}`; }).join(' ');
+  let seed = 11; const rand = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+  // crowd: stands in elliptical rings around the cage
+  const crowd = []; for (let ring = 0; ring < 7; ring++) {
+    const rx = R + 90 + ring * 34, ry = R * 0.86 + 70 + ring * 26, n = 70 + ring * 14;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + rand() * 0.03; const x = cx + rx * Math.cos(a), y = cy + ry * Math.sin(a);
+      if (x < 8 || x > W - 8 || y < 8 || y > H - 8) continue;
+      const flash = rand() < 0.035;
+      crowd.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(3.2 + rand() * 1.6).toFixed(1)}" fill="${flash ? '#fff7d6' : ['#1c2a3a', '#223244', '#18222f', '#26384a'][i % 4]}" ${flash ? `class="flash" style="animation-delay:-${(rand() * 5).toFixed(2)}s"` : ''}/>`);
+    }
+  }
+  // fighters at fixed corners
+  const n = m.contenders.length;
+  const fighters = m.contenders.map((tag, i) => {
+    const a = -Math.PI / 2 + (i / n) * Math.PI * 2 + (n === 2 ? Math.PI / 2 : 0);
+    const fx = cx + R * 0.66 * Math.cos(a), fy = cy + R * 0.66 * Math.sin(a);
+    const lane = D.lanes.find((l) => l.model === tag) || {};
+    const active = cur.model === tag;
+    const state = active ? 'answering' : ({ done: 'all answered', waiting: 'waiting', queued: 'queued' }[lane.state] || '');
+    return { tag, fx, fy, active, lane, state };
+  });
+  const judgeActive = cur.model === 'judge';
+  const target = fighters.find((f) => f.active) || (judgeActive ? { fx: cx, fy: cy + R + 70 } : null);
+  const beams = target ? `<line x1="${cx}" y1="${cy}" x2="${target.fx}" y2="${target.fy}" class="beam-out"/><line x1="${target.fx + 6}" y1="${target.fy + 6}" x2="${cx + 6}" y2="${cy + 6}" class="beam-back"/>` : '';
+  const fighterSvg = fighters.map((f) => `<g class="fighter ${f.active ? 'active' : ''}">
+      ${f.active ? `<circle cx="${f.fx}" cy="${f.fy}" r="70" class="spot"/>` : ''}
+      <circle cx="${f.fx}" cy="${f.fy}" r="${f.active ? 34 : 28}" class="corner"/>
+      <text x="${f.fx}" y="${f.fy + 7}" class="ini" text-anchor="middle">${esc(initials(f.tag))}</text>
+      <text x="${f.fx}" y="${f.fy + (f.active ? 58 : 50)}" class="fname" text-anchor="middle">${esc(f.tag)}</text>
+      <text x="${f.fx}" y="${f.fy + (f.active ? 76 : 68)}" class="fstate" text-anchor="middle">${esc(f.state)} · ${f.lane.answers || 0}/${f.lane.total || 0}</text></g>`).join('');
   const board = [...D.lanes].sort((a, b) => (b.score ?? -1) - (a.score ?? -1)).map((l) => `<div class="scorerow"><span class="mono grow" style="font-size:13px">${esc(l.model)}</span><span class="muted" style="font-size:12px">${l.answers}/${l.total}</span><span class="display" style="font-size:22px">${l.score != null ? l.score.toFixed(1) : '—'}</span></div>`).join('');
   const live = ['running', 'queued'].includes(m.status);
   const ans = D.lanes.reduce((a, l) => a + l.answers, 0), tot = D.lanes.reduce((a, l) => a + l.total, 0);
-  app.innerHTML = header('match') + `<main class="orbit">
-    <div class="nebula" aria-hidden="true"></div><div aria-hidden="true">${stars}</div>
-    <div class="stage" aria-hidden="true">${rings}
-      <div class="shield"></div><div class="shield-label">${SHIELD} GRANITE GUARDIAN</div>
-      <div class="core"><b>K9X</b><span>Intelligent<br>Model Router</span></div></div>
+  const round = cur.run_no ? `Round ${cur.run_no} of ${m.runs_per_task}` : (m.status === 'completed' ? 'Final' : '');
+  app.innerHTML = header('match') + `<main class="octagon-view">
+    <svg class="octagon" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="The K9X Octagon: contenders in their corners, the Intelligent Model Router at center, the judges cageside, the crowd around.">
+      <defs>
+        <radialGradient id="floor" cx="50%" cy="50%" r="60%"><stop offset="0" stop-color="#16303a"/><stop offset=".7" stop-color="#0b1622"/><stop offset="1" stop-color="#070b14"/></radialGradient>
+        <radialGradient id="light" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ffffff" stop-opacity=".16"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
+        <pattern id="mesh" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><path d="M0 0H14M0 0V14" stroke="#5eead4" stroke-opacity=".16" stroke-width="1"/></pattern>
+      </defs>
+      <rect width="${W}" height="${H}" fill="#04060d"/>
+      <g aria-hidden="true">${crowd.join('')}</g>
+      <polygon points="${oct(R + 26)}" fill="url(#mesh)" stroke="#2dd4bf" stroke-opacity=".55" stroke-width="3" class="cage"/>
+      <polygon points="${oct(R)}" fill="url(#floor)" stroke="#1f4d45" stroke-width="2"/>
+      <ellipse cx="${cx}" cy="${cy}" rx="${R}" ry="${R * 0.9}" fill="url(#light)"/>
+      <text x="${cx}" y="${cy - R - 40}" class="guardlabel" text-anchor="middle">GRANITE GUARDIAN · CAGE</text>
+      <circle cx="${cx}" cy="${cy}" r="92" fill="#0b2226" stroke="#2dd4bf" stroke-opacity=".5" stroke-width="2" class="mat"/>
+      <text x="${cx}" y="${cy - 4}" class="matlogo" text-anchor="middle">K9X</text>
+      <text x="${cx}" y="${cy + 22}" class="matsub" text-anchor="middle">Intelligent Model Router</text>
+      ${beams}
+      ${fighterSvg}
+      <g class="judges ${judgeActive ? 'active' : ''}"><rect x="${cx - 110}" y="${cy + R + 48}" width="220" height="44" rx="10"/>
+        <text x="${cx}" y="${cy + R + 76}" text-anchor="middle">JUDGES · ${esc(m.judge)}</text></g>
+    </svg>
     <aside class="hud left" aria-label="Match status">
-      <div class="row">${live ? '<span class="live"><span class="dot"></span>LIVE</span>' : statusBadge(m.status)}${m.phase && m.phase !== m.status ? `<span class="muted" style="font-size:13px">${esc(m.phase)}</span>` : ''}</div>
-      <h1>Match #${m.id}<br>${esc(m.suite_name)}</h1>
+      <div class="row">${live ? '<span class="live"><span class="dot"></span>LIVE</span>' : statusBadge(m.status)}${round ? `<span class="muted" style="font-size:13px">${round}</span>` : ''}</div>
+      <h1>THE K9X OCTAGON<br><span style="font-size:22px;color:var(--text-2)">Match #${m.id} · ${esc(m.suite_name)}</span></h1>
       <div class="bar" style="height:6px"><div style="width:${tot ? (100 * ans) / tot : 0}%;box-shadow:0 0 12px var(--teal)"></div></div>
-      <span class="muted" style="font-size:13px">${ans} of ${tot} answers</span>
+      <span class="muted" style="font-size:13px">${ans} of ${tot} answers · ${esc(m.phase || '')}</span>
       <div class="box"><span style="font-size:12px;color:var(--teal-2);letter-spacing:1px">NOW</span>
-        ${cur.model ? `<span class="mono" style="font-size:15px">${esc(cur.model === 'judge' ? m.judge + ' (judge)' : cur.model === 'router' ? 'K9ModelRouter' : cur.model)}</span><span style="font-size:13px;color:var(--text-2)">${esc(cur.task_id)} · ${esc(cur.title)}</span>` : `<span class="muted" style="font-size:13px">${m.status === 'completed' ? 'Match complete' : 'Idle'}</span>`}</div>
-      <div class="row"><div class="viewswitch" role="group" aria-label="View"><a href="#/match/${m.id}">Lanes</a><a href="#/match/${m.id}/orbit" aria-current="page">Orbit</a></div>${matchControls(m)}</div>
+        ${cur.model ? `<span class="mono" style="font-size:15px">${esc(cur.model === 'judge' ? m.judge + ' (judging)' : cur.model === 'router' ? 'K9ModelRouter' : cur.model)}</span><span style="font-size:13px;color:var(--text-2)">${esc(cur.task_id)} · ${esc(cur.title)}</span>` : `<span class="muted" style="font-size:13px">${m.status === 'completed' ? 'Fight over' : 'Between rounds'}</span>`}</div>
+      <div class="row"><div class="viewswitch" role="group" aria-label="View"><a href="#/match/${m.id}">Lanes</a><a href="#/match/${m.id}/octagon" aria-current="page">Octagon</a></div>${matchControls(m)}</div>
     </aside>
-    <aside class="hud right" aria-label="Scores"><span class="muted" style="font-size:12px;letter-spacing:1px">AVERAGE QUALITY SO FAR</span>${board}</aside>
-    <footer class="legend"><span><i style="background:var(--teal-2);box-shadow:0 0 8px var(--teal)"></i>Request from the router</span><span><i style="background:var(--amber);box-shadow:0 0 8px var(--amber)"></i>Answer coming back</span><span><i style="border:2px solid #2dd4bf66;width:14px;height:14px"></i>Guardian screens every prompt</span><span class="grow"></span><span>The lit beam is the model on the GPU right now; orbits are decorative.</span></footer>
+    <aside class="hud right" aria-label="Scores"><span class="muted" style="font-size:12px;letter-spacing:1px">SCORECARD · AVERAGE QUALITY</span>${board}</aside>
   </main>`;
 }
 

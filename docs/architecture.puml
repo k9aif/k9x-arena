@@ -26,7 +26,7 @@ skinparam noteFontColor #c8d3e0
 title <color:#e6edf5><size:22><b>K9X Arena — architecture</b></size></color>
 
 actor "Architect" as user
-rectangle "Web UI\nLobby · Live match (Lanes / Orbit)\nResults · Task · History · Reviews" as ui
+rectangle "Web UI\nLobby · Live match (Lanes / Octagon)\nResults · Task · History · Reviews" as ui
 
 package "K9X Arena (SBBs on k9-aif)" {
   rectangle "FastAPI\n/api · SSE stream\nuploads · reviews" as api
