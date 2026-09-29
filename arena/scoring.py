@@ -163,8 +163,10 @@ def best_by_type(star_rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
         if cur is None or (r["quality"], r.get("score", 0)) > (cur["quality"], cur.get("score", 0)):
             best[r["task_type"]] = r
     for t, b in best.items():
-        tied = [r for r in star_rows if r["task_type"] == t and r["quality"] == b["quality"]]
-        best[t] = {**b, "tie_broken": len(tied) > 1}
+        others = [r for r in star_rows if r["task_type"] == t and r["quality"] == b["quality"]
+                  and r["model"] != b["model"]]
+        best[t] = {**b, "tie_broken": bool(others),
+                   "tied_with": [{"model": r["model"], "score": r.get("score")} for r in others]}
     return best
 
 
@@ -230,9 +232,15 @@ def recommend_config(star_rows: List[Dict[str, Any]]) -> Tuple[str, List[str]]:
         catalog[aliases[model]] = {"provider": "ollama", "llm_ref": aliases[model], "capabilities": caps}
     doc = {"inference": {"llm_factory": {"models": llm_models},
                          "model_catalog": {"default_model": "general", "models": catalog}}}
-    notes = [f"{t}: {best[t]['model']} (quality {best[t]['quality']}"
-             + (f"; tied on quality, higher overall score {best[t].get('score')})" if best[t].get("tie_broken") else ")")
-             for t in TASK_TYPES if t in best]
+    def note(t: str) -> str:
+        b = best[t]
+        if not b.get("tie_broken"):
+            return f"{t}: {b['model']} (quality {b['quality']})"
+        rivals = ", ".join(f"{r['model']} {r['score']}" for r in b["tied_with"])
+        return (f"{t}: {b['model']} (quality {b['quality']}, tied with {', '.join(r['model'] for r in b['tied_with'])}; "
+                f"chosen on overall score {b.get('score')} vs {rivals})")
+
+    notes = [note(t) for t in TASK_TYPES if t in best]
     return yaml.safe_dump(doc, sort_keys=False, default_flow_style=None), notes
 
 

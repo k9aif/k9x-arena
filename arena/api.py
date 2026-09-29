@@ -28,7 +28,7 @@ from k9_aif_abb.k9_governance.guardian_governance import GuardianGovernance
 
 from arena import __version__, engine, live, ollama, scoring, screening, store, suites
 from arena.settings import (ROOT, TASK_TYPES, credentials, default_contestants, judge_model,
-                            load_config, min_params_b, ollama_base_url, second_judge_model)
+                            load_config, min_params_b, ollama_base_url, router_under_test, second_judge_model)
 
 WEB = ROOT / "web"
 CONFIG = load_config()
@@ -177,7 +177,8 @@ def models(all: bool = False, u=Depends(user)):
             "show_all": all, "default_contestants": default_contestants(CONFIG),
             "default_judge": judge_model(CONFIG), "guardian_model": guardian_model,
             "second_judge": str(CONFIG["arena"].get("judge_model_2", "")).strip(),
-            "runs_per_task": CONFIG["arena"]["runs_per_task"], "router_mode": CONFIG["arena"]["router_mode"]}
+            "runs_per_task": CONFIG["arena"]["runs_per_task"], "router_mode": CONFIG["arena"]["router_mode"],
+            "router_under_test": {a: e["model"] for a, e in router_under_test(CONFIG).items() if e["model"]}}
 
 
 @app.get("/api/suites")
@@ -277,14 +278,23 @@ def create_match(body: NewMatch, u=Depends(user)):
         suite, tasks = suites.load_suite(body.suite)
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(400, str(exc))
+    # Router mode audits the router's own models; it's only meaningful when at
+    # least one of them is competing (otherwise there's nothing to compare).
+    router_models = {e["model"] for e in router_under_test(CONFIG).values() if e["model"]}
+    router_mode, router_note = body.router_mode, ""
+    if router_mode and router_models and not (router_models & set(contenders)):
+        router_mode = False
+        router_note = (f"Router mode skipped: the router under test uses {', '.join(sorted(router_models))}, "
+                       "and none of them is a contender in this match.")
     judge_2 = second_judge_model(CONFIG, contenders)
     if judge_2 and judge_2 not in pulled:
         judge_2 = ""
     families = {m["tag"]: m["family"] for m in pulled_models if m["tag"] in set(contenders) | {body.judge, judge_2}}
     match_id = store.create_match(body.suite, suite.get("name", body.suite), contenders, body.judge,
-                                  body.runs_per_task, body.router_mode,
+                                  body.runs_per_task, router_mode,
                                   {"tasks": len(tasks), "by": u["username"], "judge_2": judge_2,
-                                   "families": families})
+                                   "families": families, "router_note": router_note,
+                                   "router_models": sorted(router_models)})
     engine.start(match_id)
     return {"id": match_id}
 

@@ -128,7 +128,7 @@ async function renderLobby() {
     suite: prev.suite || (suites[0] && suites[0].key) || '',
     runs: Math.min(3, prev.runs || models.runs_per_task), routerMode: prev.routerMode ?? models.router_mode,
     upload: prev.upload || null, error: null, busy: false, sizeNote,
-    secondJudge: models.second_judge || '',
+    secondJudge: models.second_judge || '', routerUnderTest: models.router_under_test || {},
   };
   drawLobby();
 }
@@ -183,11 +183,23 @@ function drawLobby() {
         ${up ? `<div class="mono" style="font-size:12px;color:${up.accepted ? 'var(--teal-2)' : up.stage === 'checking' ? 'var(--muted)' : 'var(--red-2)'}" role="status">${esc(up.file_name)} · ${esc(up.accepted ? `accepted · ${up.tasks} tasks` : up.stage === 'checking' ? 'scanning…' : up.reason)}</div>` : ''}
       </div>
       <label class="check"><input type="checkbox" data-act="router" ${L.routerMode ? 'checked' : ''}><span>Also run through the Intelligent Model Router</span></label>
+      ${routerNote(L, selected)}
       <div class="row muted" style="justify-content:space-between;font-size:13px;border-top:1px solid var(--line);padding-top:12px">
         <span>${selected.length} contenders × ${suite ? suite.tasks : 0} tasks × ${L.runs} runs · about ${estH.toFixed(1)} h</span><span>Guardian screens every prompt</span></div>
       <button class="btn primary" style="height:52px;font-size:17px;justify-content:center" data-act="start" ${!selected.length || !L.suite || L.busy || guardianOff ? 'disabled' : ''}>${L.busy ? 'Starting…' : 'Start match'}</button>
     </aside></div></main>`;
 }
+function routerNote(L, selected) {
+  const rut = Object.entries(L.routerUnderTest || {});
+  if (!L.routerMode || !rut.length) return '';
+  const missing = rut.filter(([, m]) => !selected.includes(m));
+  const list = rut.map(([a, m]) => `${esc(a)} → <span class="mono">${esc(m)}</span>`).join(' · ');
+  const warn = missing.length === rut.length
+    ? `<br><span style="color:var(--amber)">None of the router's models is entered, so router mode will be skipped. Enter ${missing.map(([, m]) => esc(m)).join(' and ')} to audit it.</span>`
+    : missing.length ? `<br><span style="color:var(--amber)">${missing.map(([, m]) => esc(m)).join(', ')} isn't entered; task types routed to it can't be audited.</span>` : '';
+  return `<div class="muted" style="font-size:12.5px;line-height:1.5;margin-top:-8px">Router under test: ${list}${warn}</div>`;
+}
+
 function judgeNote(L, selected) {
   const fam = (tag) => (L.models.find((m) => m.tag === tag) || {}).family;
   const jf = fam(L.judge);
@@ -448,7 +460,7 @@ async function renderResults(id) {
   const board = R.leaderboard.map((b) => `<tr><td class="rank r${b.rank}">${b.rank}</td><td class="mono">${esc(b.model)}</td><td class="display" style="font-size:20px">${b.score.toFixed(1)}</td><td class="stars">${starText(b.stars)}</td><td>${secs(b.p50_ms)} / ${secs(b.p95_ms)}</td><td>${b.over_refusals} of ${b.answers}</td><td>± ${b.spread}</td></tr>`).join('');
   const audit = D.audit.map((a) => { const ok = a.verdict === 'match'; const na = a.verdict === 'not_in_match';
     return `<tr><td>${TYPE_LABEL[a.task_type] || esc(a.task_type)}</td><td class="mono" style="font-size:12px">${esc(short(a.router_model))} (${esc(a.router_alias)}) → best ${esc(short(a.best_model))}</td>
-      <td>${na ? '<span class="badge grey">Not in match</span>' : ok ? '<span class="badge teal">Match</span>' : '<span class="badge amber">Mismatch</span>'}</td>
+      <td>${na ? '<span class="badge grey" title="The router chose a model that is not competing in this match, so its answer quality is unknown.">Router\'s model not in match</span>' : ok ? '<span class="badge teal">Match</span>' : '<span class="badge amber">Mismatch</span>'}</td>
       <td class="display" style="font-size:18px;text-align:right;color:${ok || na ? 'var(--muted)' : 'var(--amber)'}">${a.regret == null ? '—' : ok ? '0' : '−' + a.regret}</td></tr>`; }).join('');
   const tasks = D.tasks.map((t) => `<tr class="click" data-href="#/task/${id}/${encodeURIComponent(t.id)}"><td class="mono muted">${esc(t.id)}</td><td><span class="tag">${esc(t.type)}</span></td><td>${esc(t.title)}${t.screen && t.screen.excluded ? ' <span class="badge red">Excluded by screening</span>' : ''}</td>${models.map((mdl) => { const v = (D.task_scores[t.id] || {})[mdl]; return `<td class="display" style="font-size:18px">${v == null ? '—' : v.toFixed(0)}</td>`; }).join('')}</tr>`).join('');
   const w = R.winner || {}; const J = R.judge || {}; const RT = R.router || {};
@@ -480,7 +492,7 @@ async function renderResults(id) {
       </div>
       <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
         <section class="panel"><h2>Router audit</h2><p class="muted" style="font-size:12.5px;margin:0 0 8px">Did K9ModelRouter send each task type to the model that scored best?</p>
-          ${audit ? `<table class="grid"><tbody>${audit}</tbody></table>` : '<div class="empty">Router mode was off for this match.</div>'}</section>
+          ${audit ? `<table class="grid"><tbody>${audit}</tbody></table>` : `<div class="empty">${esc((m.settings && m.settings.router_note) || 'Router mode was off for this match.')}</div>`}</section>
         <section class="panel teal"><div class="row"><h2 class="grow" style="margin:0">Recommended router config</h2><button class="btn small" data-act="copy">Copy</button><a class="btn small primary" href="/api/matches/${id}/config.yaml">Download</a></div>
           <pre class="yaml" id="yaml" style="margin-top:10px">${esc(R.recommended_yaml || '')}</pre>
           <ul class="muted" style="font-size:12.5px;margin:10px 0 0;padding-left:18px">${(R.recommended_notes || []).map((n) => `<li>${esc(n)}</li>`).join('')}</ul></section>

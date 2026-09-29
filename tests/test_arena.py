@@ -335,7 +335,7 @@ def test_quality_tie_broken_by_overall_score():
     _, notes = scoring.recommend_config([dict(r, spread=0, p50_ms=1, p95_ms=1, over_refusals=0, answers=1,
                                               consistency=100, latency=100, refusal_accuracy=100, stars=5,
                                               pending=0) for r in rows])
-    assert "tied on quality" in notes[0]
+    assert "tied with slow" in notes[0] and "chosen on overall score 99.0" in notes[0]
 
 
 def test_verdict_clear_speed_and_draw():
@@ -372,3 +372,31 @@ def test_rounds_capped_at_three(client):
     r = client.post("/api/matches", json={"contenders": ["a:1"], "judge": "j:1",
                                           "suite": "built-in:quick_check", "runs_per_task": 5})
     assert r.status_code == 422
+
+
+def test_tie_note_names_the_tied_models():
+    rows = [{"model": "qwen3.8", "task_type": "code", "quality": 100.0, "score": 87.1},
+            {"model": "gemma4", "task_type": "code", "quality": 100.0, "score": 85.3},
+            {"model": "coder", "task_type": "code", "quality": 0.0, "score": 40.0}]
+    full = [dict(r, spread=0, p50_ms=1, p95_ms=1, over_refusals=0, answers=1, consistency=100,
+                 latency=100, refusal_accuracy=100, stars=4, pending=0) for r in rows]
+    _, notes = scoring.recommend_config(full)
+    assert notes == ["code: qwen3.8 (quality 100.0, tied with gemma4; chosen on overall score 87.1 vs gemma4 85.3)"]
+    assert "coder" not in notes[0]
+
+
+def test_router_mode_skipped_when_router_models_not_competing(client, monkeypatch):
+    import arena.api as api_mod
+    monkeypatch.setattr(api_mod.ollama, "list_models", lambda: [
+        {"tag": t, "family": "f", "params_b": 8.0} for t in ("small-a:7b", "small-b:8b", "judge:8b")])
+    monkeypatch.setattr(api_mod, "_guardian_live", lambda: {"live": True})
+    monkeypatch.setattr(api_mod.engine, "start", lambda mid: None)
+    monkeypatch.setitem(api_mod.CONFIG["arena"], "router_under_test",
+                        {"general": {"model": "big-x:27b", "capabilities": ["general"]},
+                         "reasoning": {"model": "big-y:31b", "capabilities": ["reasoning"]}})
+    client.post("/api/login", json={"username": "demo", "password": "demo"})
+    r = client.post("/api/matches", json={"contenders": ["small-a:7b", "small-b:8b"], "judge": "judge:8b",
+                                          "suite": "built-in:quick_check", "runs_per_task": 1, "router_mode": True})
+    assert r.status_code == 200, r.text
+    m = client.get(f"/api/matches/{r.json()['id']}").json()["match"]
+    assert m["router_mode"] is False and "none of them is a contender" in m["settings"]["router_note"]
