@@ -678,8 +678,8 @@ async function renderHistory() {
   const rows = list.map((m) => `<tr><td class="mono muted">#${m.id}</td><td>${esc(m.suite_name)}</td><td class="mono" style="font-size:13px">${esc(m.contenders.join(', '))}</td><td>${statusBadge(m.status)}</td>
     <td class="mono" style="color:var(--amber)">${esc(m.winner || '—')}${m.winner_score != null ? ` · ${m.winner_score.toFixed(1)}` : ''}</td><td class="muted">${new Date(m.created_at * 1000).toLocaleString()}</td>
     <td><div class="row" style="gap:6px"><a class="btn small" href="#/match/${m.id}">Match</a>${m.status === 'completed' ? `<a class="btn small primary" href="#/results/${m.id}">Results</a>` : ''}${isAdmin ? `<button class="btn small danger" data-act="delete" data-id="${m.id}">Delete</button>` : ''}</div></td></tr>`).join('');
-  app.innerHTML = header('history') + `<main class="page"><h1 class="display" style="margin:0 0 16px;font-size:40px">History</h1>
-    <section class="panel">${rows ? `<table class="grid"><thead><tr><th>Match</th><th>Suite</th><th>Contenders</th><th>Status</th><th>Winner</th><th>Started</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : '<div class="empty">No matches yet.</div>'}</section></main>`;
+  app.innerHTML = header('history') + `<main class="page"><h1 class="display" style="margin:0 0 16px;font-size:40px">${showcase() ? 'Matches' : 'History'}</h1>
+    <section class="panel">${rows ? `<table class="grid"><thead><tr><th>Match</th><th>Suite</th><th>Contenders</th><th>Status</th><th>Winner</th><th>Started</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<div class="empty">${showcase() ? 'No matches published yet.' : 'No matches yet.'}</div>`}</section></main>`;
 }
 async function renderReviews() {
   const list = await api('/api/reviews'); S.pendingReviews = list.length;
