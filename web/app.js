@@ -199,6 +199,80 @@ function routerNote(L, selected) {
   return `<div class="muted" style="font-size:12.5px;line-height:1.5;margin-top:-8px">After scoring, each task is hidden in turn; K9ModelRouter learns from the others' scores and picks a model for it.${rules}</div>`;
 }
 
+function judgeNote(L, selected) {
+  const fam = (tag) => (L.models.find((m) => m.tag === tag) || {}).family;
+  const jf = fam(L.judge);
+  const clash = jf ? selected.filter((t) => fam(t) === jf) : [];
+  const second = L.secondJudge && !selected.includes(L.secondJudge) ? `second opinion from <span class="mono">${esc(L.secondJudge)}</span>` : 'second pass resamples the same judge';
+  return `<div class="muted" style="font-size:12.5px;line-height:1.5">Judging is anonymized and calibrated; ${second}.${clash.length ? `<br><span style="color:var(--amber)">Fairness: the judge is the same model family (${esc(jf)}) as ${clash.map(esc).join(', ')}. A judge from another family is fairer.</span>` : ''}</div>`;
+}
+
+function statusBadge(s) {
+  const map = { completed: 'teal', running: 'amber', queued: 'grey', paused: 'grey', failed: 'red' };
+  return `<span class="badge ${map[s] || 'grey'}">${esc(s)}</span>`;
+}
+function rememberMatches(list) {
+  const running = list.find((m) => m.status === 'running');
+  S.lastMatch = running ? running.id : (list[0] && list[0].id);
+  const done = list.find((m) => m.status === 'completed'); S.lastDone = done && done.id;
+}
+
+// ── delegated events ──────────────────────────────────────────────────────────
+app.addEventListener('click', async (ev) => {
+  const row = ev.target.closest('tr[data-href]');
+  if (row && !ev.target.closest('button,a')) { location.hash = row.dataset.href; return; }
+  const el = ev.target.closest('[data-act]'); if (!el) return;
+  const act = el.dataset.act;
+  if (act === 'logout') { await api('/api/logout', { method: 'POST' }).catch(() => {}); S.me = null; location.hash = '#/login'; }
+  if (act === 'start') startMatch();
+  if (act === 'celebrate' && S.lastReport) celebrate(S.lastReport.leaderboard, S.lastReport.judge, S.lastReport.verdict);
+  if (act === 'close-celebration') closeCelebration();
+  if (act === 'showall' || act === 'showtop') { S.showAllModels = act === 'showall'; renderLobby(); }
+  if (['pause', 'cancel', 'resume'].includes(act)) {
+    try { await api(`/api/matches/${el.dataset.id}/${act}`, { method: 'POST' }); } catch (e) { alert(e.message); }
+    if (act === 'resume') route();
+  }
+  if (act === 'delete' && confirm(`Delete match #${el.dataset.id} and all its results?`)) {
+    try { await api(`/api/matches/${el.dataset.id}`, { method: 'DELETE' }); route(); } catch (e) { alert(e.message); }
+  }
+  if (act === 'copy') {
+    const txt = document.getElementById('yaml').textContent;
+    try { await navigator.clipboard.writeText(txt); el.textContent = 'Copied'; setTimeout(() => { el.textContent = 'Copy'; }, 1500); } catch { el.textContent = 'Select and copy'; }
+  }
+  if (act === 'decide') {
+    const input = document.getElementById(`rv-${el.dataset.id}`);
+    try { await api(`/api/reviews/${el.dataset.id}`, { method: 'POST', body: JSON.stringify({ score: +input.value }) }); route(); } catch (e) { alert(e.message); }
+  }
+});
+app.addEventListener('change', async (ev) => {
+  const el = ev.target.closest('[data-act]'); if (!el || !S.lobby) return;
+  const L = S.lobby, act = el.dataset.act;
+  if (act === 'toggle') { el.checked ? L.selected.add(el.dataset.tag) : L.selected.delete(el.dataset.tag); }
+  if (act === 'judge') { L.judge = el.value; L.selected.delete(el.value); }
+  if (act === 'runs') L.runs = +el.value;
+  if (act === 'suite') L.suite = el.value;
+  if (act === 'router') L.routerMode = el.checked;
+  if (act === 'upload' && el.files[0]) {
+    const file = el.files[0];
+    L.upload = { stage: 'checking', file_name: file.name }; drawLobby();
+    const fd = new FormData(); fd.append('file', file);
+    try {
+      const r = await api('/api/uploads', { method: 'POST', body: fd });
+      L.upload = r;
+      if (r.accepted) { L.suites = await api('/api/suites'); L.suite = r.suite_key; }
+    } catch (e) { L.upload = { stage: 'precheck', file_name: file.name, reason: e.message }; }
+  }
+  drawLobby();
+});
+async function startMatch() {
+  const L = S.lobby; L.busy = true; L.error = null; drawLobby();
+  try {
+    const r = await api('/api/matches', { method: 'POST', body: JSON.stringify({
+      contenders: [...L.selected].filter((t) => t !== L.judge), judge: L.judge, suite: L.suite, runs_per_task: L.runs, router_mode: L.routerMode }) });
+    L.busy = false; location.hash = `#/match/${r.id}`;
+  } catch (e) { L.busy = false; L.error = e.message; drawLobby(); }
+}
+
 // ── live match (lanes + orbit) ────────────────────────────────────────────────
 const PHASES = [['screening', 'Screening'], ['answering', 'Answering'], ['grading', 'Grading'], ['judging', 'Judging'], ['scoring', 'Scoring'], ['router', 'Router test']];
 async function renderMatch(id, view) {

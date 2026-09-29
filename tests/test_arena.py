@@ -475,3 +475,25 @@ def test_router_test_one_task_per_type_falls_back_to_rules():
     quality = {t: {"a": {"q": 90.0, "ms": None}, "b": {"q": 80.0, "ms": None}} for t in types}
     out = router_eval.evaluate(tasks, quality, ["a", "b"], {})
     assert out["without_evidence"] == 6 and out["learned_decisions"] == 0
+
+
+def test_ui_script_defines_every_helper_it_calls():
+    """Regression: an edit once deleted rememberMatches, startMatch and both
+    event listeners from app.js; the Lobby froze on 'Loading contenders…'."""
+    import re
+    from pathlib import Path
+    js = (Path(__file__).resolve().parent.parent / "web" / "app.js").read_text()
+    defined = set(re.findall(r"(?:function\s+|const\s+|let\s+)([A-Za-z_]\w*)", js))
+    for name in ("rememberMatches", "startMatch", "judgeNote", "routerNote", "statusBadge",
+                 "renderLobby", "renderResults", "routerPanel", "routerKpis", "verdictTile"):
+        assert name in defined, name
+    assert "app.addEventListener('click'" in js and "app.addEventListener('change'" in js
+    # every top-level helper called as name( must be defined somewhere
+    js_code = re.sub(r"`[^`]*`|'[^'\n]*'|\"[^\"\n]*\"", "''", js)  # ignore strings/templates
+    called = set(re.findall(r"(?<![.\w])([a-z]\w*)\(", js_code))
+    builtins = {"if", "for", "while", "switch", "catch", "return", "typeof", "fetch", "setTimeout",
+                "clearTimeout", "setInterval", "clearInterval", "alert", "confirm", "encodeURIComponent",
+                "decodeURIComponent", "parseInt", "parseFloat", "isNaN", "requestAnimationFrame",
+                "cancelAnimationFrame", "getComputedStyle", "function", "async", "await", "new",
+                "record_feedback"}  # prose on the Architecture page, inside a nested template
+    assert not (called - defined - builtins), called - defined - builtins
