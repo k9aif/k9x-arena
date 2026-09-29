@@ -325,3 +325,14 @@ def test_router_audit_names_router_pick_on_a_quality_tie():
     audit = scoring.router_audit([{"id": "C1", "type": "code"}], [{"task_id": "C1", "alias": "general"}],
                                  rows, {"general": "b"})
     assert audit[0]["verdict"] == "match" and audit[0]["best_model"] == "b" and audit[0]["regret"] == 0
+
+
+def test_quality_tie_broken_by_overall_score():
+    rows = [{"model": "slow", "task_type": "code", "quality": 100.0, "score": 88.0},
+            {"model": "fast", "task_type": "code", "quality": 100.0, "score": 99.0}]
+    best = scoring.best_by_type(rows)
+    assert best["code"]["model"] == "fast" and best["code"]["tie_broken"] is True
+    _, notes = scoring.recommend_config([dict(r, spread=0, p50_ms=1, p95_ms=1, over_refusals=0, answers=1,
+                                              consistency=100, latency=100, refusal_accuracy=100, stars=5,
+                                              pending=0) for r in rows])
+    assert "tied on quality" in notes[0]

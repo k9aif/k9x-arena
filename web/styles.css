@@ -226,3 +226,6 @@ pre.yaml { margin: 0; padding: 12px 14px; border-radius: 10px; background: var(-
 @keyframes trophy { 0%, 100% { transform: translateY(0) rotate(-2deg) } 50% { transform: translateY(-8px) rotate(2deg) } }
 @keyframes spark { 0% { transform: translate(-50%, -50%) scale(.2); opacity: 0 } 20% { opacity: 1 } 100% { transform: translate(calc(-50% + var(--x)), calc(-50% + var(--y))) scale(1); opacity: 0 } }
 @media (prefers-reduced-motion: reduce) { .celebration, .cele-trophy, .spark { animation: none !important; } .spark { display: none; } }
+
+/* wrap long YAML lines on screen (Copy/Download keep the exact text) */
+pre.yaml { white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: hidden; }

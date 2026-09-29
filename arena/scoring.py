@@ -154,11 +154,16 @@ def leaderboard(star_rows: List[Dict[str, Any]], thresholds: Dict[str, Any]) -> 
 
 
 def best_by_type(star_rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Best answer quality per task type; a quality tie goes to the higher
+    overall score (speed, consistency, refusals) and is marked `tie_broken`."""
     best: Dict[str, Dict[str, Any]] = {}
     for r in star_rows:
         cur = best.get(r["task_type"])
-        if cur is None or r["quality"] > cur["quality"]:
+        if cur is None or (r["quality"], r.get("score", 0)) > (cur["quality"], cur.get("score", 0)):
             best[r["task_type"]] = r
+    for t, b in best.items():
+        tied = [r for r in star_rows if r["task_type"] == t and r["quality"] == b["quality"]]
+        best[t] = {**b, "tie_broken": len(tied) > 1}
     return best
 
 
@@ -224,7 +229,9 @@ def recommend_config(star_rows: List[Dict[str, Any]]) -> Tuple[str, List[str]]:
         catalog[aliases[model]] = {"provider": "ollama", "llm_ref": aliases[model], "capabilities": caps}
     doc = {"inference": {"llm_factory": {"models": llm_models},
                          "model_catalog": {"default_model": "general", "models": catalog}}}
-    notes = [f"{t}: {best[t]['model']} (quality {best[t]['quality']})" for t in TASK_TYPES if t in best]
+    notes = [f"{t}: {best[t]['model']} (quality {best[t]['quality']}"
+             + (f"; tied on quality, higher overall score {best[t].get('score')})" if best[t].get("tie_broken") else ")")
+             for t in TASK_TYPES if t in best]
     return yaml.safe_dump(doc, sort_keys=False, default_flow_style=None), notes
 
 
