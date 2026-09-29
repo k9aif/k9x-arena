@@ -180,7 +180,7 @@ contenders, a live match, a scoreboard.
 | `runs` | match, contender, task, run #, output, latency, tokens, refused?, error |
 | `grades` | run id, grader (deterministic / judge 1 / judge 2 / HIL), score, grade, rationale |
 | `stars` | match, contender, task type, score, stars |
-| `router_audit` | match, task type, router pick, best contender, regret |
+| `router_audit` | legacy (matches before the router test); the router test is stored in the report |
 | `uploads` | file name, hash, Guardian verdict and reason, accepted? |
 
 ## 5. Phases
@@ -224,10 +224,12 @@ an Architecture tab.
 **Next:**
 1. **K9X HIL for disputed grades.** Today disagreements go to an in-app review
    queue; route them through `RequiresHIL` → K9X HIL when Kafka is available.
-2. **A learning router (framework).** K9ModelRouter scores each request on its
-   own and never reads the session history or model affinity it records.
-   Arena results are exactly the evidence a learned routing policy needs —
-   a framework change, proposed separately.
+2. ~~A learning router (framework)~~: done in k9-aif 1.13.0 (2026-09-29).
+   K9ModelRouter predicts per-prompt quality from graded evidence
+   (`record_feedback`, similarity-weighted k-NN, Not Diamond / RouteLLM
+   style). The arena's second, routed pass became the held-out router test
+   (`router_eval.py`). Next: an "Export evidence" button that writes a match's
+   grades into a production router's `routing_outcomes`.
 3. ~~Live grades during answering~~ — done: code, extraction and reasoning
    are graded as each answer lands.
 4. **Packaging:** `pip install k9x-arena` or a `k9x arena` subcommand; container

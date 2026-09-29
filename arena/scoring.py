@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # K9-AIF Framework
 """Scoring: final score per answer, stars per model per task type,
-leaderboard, router audit (with regret) and the recommended router config.
+leaderboard and the recommended router config (the router test is in
+router_eval.py).
 Pure functions over rows from the store — easy to test."""
 
 from __future__ import annotations
@@ -168,35 +169,6 @@ def best_by_type(star_rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
         best[t] = {**b, "tie_broken": bool(others),
                    "tied_with": [{"model": r["model"], "score": r.get("score")} for r in others]}
     return best
-
-
-def router_audit(tasks: List[Dict[str, Any]], router_runs: List[Dict[str, Any]],
-                 star_rows: List[Dict[str, Any]], alias_models: Dict[str, str]) -> List[Dict[str, Any]]:
-    task_type = {t["id"]: t["type"] for t in tasks}
-    picks: Dict[str, Counter] = defaultdict(Counter)
-    for r in router_runs:
-        if r.get("alias"):
-            picks[task_type.get(r["task_id"], "?")][r["alias"]] += 1
-    quality = {(r["model"], r["task_type"]): r["quality"] for r in star_rows}
-    best = best_by_type(star_rows)
-    rows = []
-    for ttype in [t for t in TASK_TYPES if t in picks]:
-        alias = picks[ttype].most_common(1)[0][0]
-        model = alias_models.get(alias, alias)
-        b = best.get(ttype)
-        if not b:
-            continue
-        if (model, ttype) not in quality:
-            rows.append({"task_type": ttype, "router_alias": alias, "router_model": model,
-                         "best_model": b["model"], "regret": None, "verdict": "not_in_match"})
-            continue
-        regret = round(b["quality"] - quality[(model, ttype)], 1)
-        # A tie on quality is a match: name the router's own pick as best.
-        best_model = model if regret <= 0 else b["model"]
-        rows.append({"task_type": ttype, "router_alias": alias, "router_model": model,
-                     "best_model": best_model, "regret": max(0.0, regret),
-                     "verdict": "match" if regret <= 0 else "mismatch"})
-    return rows
 
 
 def recommend_config(star_rows: List[Dict[str, Any]]) -> Tuple[str, List[str]]:

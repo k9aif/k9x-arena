@@ -15,14 +15,15 @@ arena:
   # Lobby lists only models with at least this many billion parameters
   # (ARENA_MIN_PARAMS_B in .env overrides). "Show smaller models" reveals the rest.
   min_contender_params_b: 10
-  router_mode: true          # also send every task through K9ModelRouter
+  router_mode: true          # held-out test of K9ModelRouter's learned routing (no extra model calls)
   max_tokens: 2048
   suites_dir: ./suites
   llm_retries: 2             # llm_invoke attempts per call
   llm_retry_delay_s: 5
 
-  # The production-style catalog the router audit tests. Router mode sends
-  # the real task type and K9ModelRouter picks one of these two.
+  # Your production-style router config. The router test scores it as the
+  # "your rules" baseline (rules only, by task type) and uses its
+  # capabilities as the learned router's cold-start prior.
   router_under_test:
     general:
       model: "${ARENA_ROUTER_GENERAL_MODEL:-}"
@@ -30,6 +31,11 @@ arena:
     reasoning:
       model: "${ARENA_ROUTER_REASONING_MODEL:-}"
       capabilities: [reasoning, analysis, extraction]
+
+  # Learned-routing settings for the router test (inference.router.learning
+  # keys of k9-aif >= 1.13; framework defaults when empty).
+  router_test:
+    learning: {}
 
   sandbox:
     code_timeout_seconds: 20   # generated code runs only in a subprocess

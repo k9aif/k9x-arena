@@ -1,3 +1,0 @@
-# K9X Arena agent behaviour (merged over config.yaml)
-role: "Router tester"
-goal: "Send each task once with its real task type and record which model K9ModelRouter chose."

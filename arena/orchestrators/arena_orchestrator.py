@@ -4,8 +4,7 @@
 GradingSquad → ReportSquad. Knows its squads, never the router.
 
 Each match has its own contenders, so the orchestrator builds the match's
-inference config (one catalog entry per contender, plus the judge and the
-router under test) and resets the framework's model factories before the
+inference config (one catalog entry per contender, plus the judges) and resets the framework's model factories before the
 squads run. Only one match runs at a time (one GPU)."""
 
 from __future__ import annotations
@@ -23,18 +22,18 @@ from k9_aif_abb.k9_squad.squad_loader import SquadLoader
 
 from arena import live, store
 from arena.agents.common import agent_config
-from arena.agents.contestant_agents import ForcedRunAgent, RouterRunAgent
+from arena.agents.contestant_agents import ForcedRunAgent
 from arena.agents.grading_agents import (CodeGraderAgent, ExtractionGraderAgent, JudgeAgent,
                                          ReasoningGraderAgent, SafetyGraderAgent)
-from arena.agents.report_agents import ConfigRecommenderAgent, RouterAuditAgent, ScoringAgent
+from arena.agents.report_agents import ConfigRecommenderAgent, RouterTestAgent, ScoringAgent
 from arena.agents.suite_agents import InputScreenAgent, SuiteLoaderAgent
 from arena.settings import build_inference_config
 
 _SQUADS_YAML = Path(__file__).resolve().parent.parent / "squads" / "arena_squads.yaml"
 
-_AGENTS = [SuiteLoaderAgent, InputScreenAgent, ForcedRunAgent, RouterRunAgent, CodeGraderAgent,
+_AGENTS = [SuiteLoaderAgent, InputScreenAgent, ForcedRunAgent, CodeGraderAgent,
            ExtractionGraderAgent, ReasoningGraderAgent, SafetyGraderAgent, JudgeAgent,
-           ScoringAgent, RouterAuditAgent, ConfigRecommenderAgent]
+           ScoringAgent, RouterTestAgent, ConfigRecommenderAgent]
 
 FULL_RUN = ["SuiteSquad", "ContestantSquad", "GradingSquad", "ReportSquad"]
 RESCORE = ["ReportSquad"]

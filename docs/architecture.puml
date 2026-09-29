@@ -34,16 +34,16 @@ package "K9X Arena (SBBs on k9-aif)" {
   rectangle "<b>ArenaRouter</b>\nextends BaseRouter\narena.run · arena.rescore" as router
   rectangle "<b>ArenaOrchestrator</b>\nextends BaseOrchestrator\nbuilds this match's catalog" as orch
   rectangle "<b>1 · SuiteSquad</b>\nSuiteLoaderAgent\nInputScreenAgent" as s1
-  rectangle "<b>2 · ContestantSquad</b>\nForcedRunAgent\nRouterRunAgent" as s2
+  rectangle "<b>2 · ContestantSquad</b>\nForcedRunAgent" as s2
   rectangle "<b>3 · GradingSquad</b>\nCode · Extraction · Reasoning graders\nSafetyGraderAgent · JudgeAgent" as s3
-  rectangle "<b>4 · ReportSquad</b>\nScoringAgent · RouterAuditAgent\nConfigRecommenderAgent" as s4
+  rectangle "<b>4 · ReportSquad</b>\nScoringAgent · RouterTestAgent\nConfigRecommenderAgent" as s4
   database "SQLite\nmatches · runs · grades\nstars · audit · reviews" as db
   rectangle "Code sandbox\nsubprocess · timeout\nCPU / memory limits" as sandbox
 }
 
 package "k9-aif framework (pip install k9-aif)" {
   rectangle "<b>llm_invoke</b>\nretries · LLMCall trace" as invoke
-  rectangle "<b>K9ModelRouter</b>\ncapability scoring per request\ncontestant_n · judge · general · reasoning" as kmr
+  rectangle "<b>K9ModelRouter</b>\nrules, then learned from graded results\ncontestant_n · judge (pinned)" as kmr
   rectangle "LLMFactory" as llmf
   rectangle "<b>k9x_Shield</b>\nShieldGovernance" as shield
   rectangle "<b>Granite Guardian</b>\nGuardianGovernance · fail-closed" as guardian
@@ -89,12 +89,11 @@ s4 --> db
 
 note right of kmr
   Every model call goes through the router.
-  Forced mode pins a contender by its unique
-  capability; router mode sends the real task
-  type, and the audit checks the router's choice.
-  The router scores each request on its own
-  (capability, sensitivity, latency, cost) and
-  records sessions and decisions; it does not
-  yet learn from them.
+  Contest runs pin a contender by its unique
+  capability (learning off, so nothing reroutes).
+  The router test (RouterTestAgent) holds each
+  task out, teaches fresh K9ModelRouters the
+  other tasks' scores via record_feedback(),
+  and scores route()'s pick. No model is rerun.
 end note
 @enduml

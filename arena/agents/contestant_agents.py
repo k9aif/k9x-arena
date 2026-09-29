@@ -8,8 +8,8 @@ so the router itself routes it — agents never bypass the router. Calls are
 grouped by model (every run of every task for one model, then the next) so
 the single GPU swaps models as rarely as possible.
 
-RouterRunAgent sends each task once with its REAL task type and records
-which catalog entry K9ModelRouter chose — the evidence for the router audit."""
+There is no second, routed pass: the router test (ReportSquad,
+arena/router_eval.py) reuses these scores instead of re-running models."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ def grade_now(run_id: int, task: Dict[str, Any], output: str, timeout: int) -> N
     else:
         score, detail = graders.grade_reasoning(output, str(task["answer"]), task.get("aliases"))
     store.save_grade(run_id, task["type"], score, detail=detail)
-from arena.settings import alias_for, model_for_alias
+from arena.settings import alias_for
 
 
 def _active_tasks(match_id: int):
@@ -86,37 +86,3 @@ class ForcedRunAgent(ArenaAgent):
                               + (f"{latency / 1000:.1f} s" if not error else error[:120]))
         live.set_current(None)
         return {"answers": done, "total": total}
-
-
-class RouterRunAgent(ArenaAgent):
-    layer = "K9X Arena RouterRunAgent SBB"
-
-    def execute(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        match_id = payload["match_id"]
-        match = store.get_match(match_id)
-        if not match["router_mode"]:
-            return {"skipped": True}
-        store.update_match(match_id, phase="router")
-        tasks = sorted(_active_tasks(match_id), key=lambda t: t["type"])  # group by type → fewer swaps
-        existing = {r["task_id"] for r in store.get_runs(match_id, "router")}
-        done = len(existing)
-        for task in tasks:
-            live.checkpoint()
-            live.set_progress("router", done, len(tasks))
-            if task["id"] in existing:
-                continue
-            live.set_current({"model": "router", "task_id": task["id"], "title": task.get("title", ""),
-                              "type": task["type"], "run_no": 1})
-            prompt = contestant_prompt(task)
-            output, alias, latency, error = "", "", 0, None
-            try:
-                output, alias, latency = self.ask(prompt, task_type=task["type"])
-            except RuntimeError as exc:
-                error = str(exc)[:500]
-            model = model_for_alias(self.config, alias) if alias else "?"
-            store.save_run(match_id, "router", model, alias, task["id"], 1, output, latency, is_refusal(output), error)
-            done += 1
-            live.emit("Router", f"task_type={task['type']} → {alias or '?'} ({model})")
-        live.set_progress("router", len(tasks), len(tasks))
-        live.set_current(None)
-        return {"routed": done}

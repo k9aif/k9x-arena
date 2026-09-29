@@ -1,9 +1,9 @@
 # K9X Arena
 
 Put LLMs head to head on a task suite. K9X Arena grades every answer, awards
-1–5 stars per model per task type, audits the K9-AIF **Intelligent Model
-Router** (did it send each task to the model that actually did best?), and
-writes the `model_catalog` your router should use.
+1–5 stars per model per task type, tests the K9-AIF **Intelligent Model
+Router** (taught by the match's scores, does it pick the best model for a
+task it hasn't seen?), and writes the `model_catalog` your router should use.
 
 It runs on your own machine against your own Ollama models. Your prompts and
 documents never leave it.
@@ -12,9 +12,13 @@ documents never leave it.
 
 ## What makes it different
 
-- **Router audit.** Every task also goes through K9-AIF's K9ModelRouter with
-  its real task type. The report shows where the router picked a worse model
-  and how many quality points that cost ("router regret").
+- **Router test.** K9ModelRouter (k9-aif 1.13+) learns from graded results:
+  it predicts each model's quality on a new prompt from similar prompts it
+  has seen, as Not Diamond and RouteLLM do. After scoring, each task is
+  hidden in turn; the router learns from the other tasks' scores and picks a
+  model for it. Its picks are scored against the best possible pick, the best
+  single model, your router config's rules and a random pick. No model is
+  run again, so the test takes seconds.
 - **Config you can paste.** Results end with a recommended `model_catalog`
   that uses only keys K9ModelRouter reads.
 - **Governed by default.** Granite Guardian screens every task prompt and
@@ -56,7 +60,7 @@ Open `http://localhost:8111` and sign in (`demo` / `demo` by default; set
 | `OLLAMA_BASE_URL` | Ollama host serving contenders, judge and Guardian |
 | `ARENA_CONTESTANTS` | Contenders offered by default (any pulled model can be picked per match) |
 | `ARENA_JUDGE_MODEL` | Judge for open-ended answers; never also a contender |
-| `ARENA_ROUTER_GENERAL_MODEL`, `ARENA_ROUTER_REASONING_MODEL` | The two catalog entries the router audit tests |
+| `ARENA_ROUTER_GENERAL_MODEL`, `ARENA_ROUTER_REASONING_MODEL` | Your router config, scored as the "your rules" baseline in the router test |
 | `ARENA_GUARDIAN_MODEL` | Granite Guardian model (mandatory) |
 | `ARENA_USER` / `ARENA_PASSWORD`, `ARENA_ADMIN_USER` / `ARENA_ADMIN_PASSWORD` | Logins |
 
@@ -69,9 +73,9 @@ capabilities.
 ![K9X Arena architecture](web/architecture.png)
 
 1. **SuiteSquad**: load the suite; screen every prompt with k9x_Shield and Granite Guardian.
-2. **ContestantSquad**: run every task on every contender (grouped by model so the GPU swaps rarely), then once through the router.
+2. **ContestantSquad**: run every task on every contender (grouped by model so the GPU swaps rarely).
 3. **GradingSquad**: deterministic graders, Guardian's safety pass on adversarial answers, then two judge passes.
-4. **ReportSquad**: scores and stars, router audit, recommended config.
+4. **ReportSquad**: scores and stars, the held-out router test, recommended config.
 
 Every model call goes through the framework's `llm_invoke` and K9ModelRouter.
 To pin a task to one contender, each contender gets its own catalog entry with
@@ -114,9 +118,13 @@ pytest tests -q
 - One match at a time (one GPU). Matches can be paused and resumed.
 - Judge disagreements go to an in-app review queue; routing them to K9X HIL
   is planned.
-- K9ModelRouter scores each request on its own and doesn't yet learn from
-  past results; the arena's recommended config is how evidence feeds back
-  into it today.
+- The router test needs several similar tasks per type. On Quick Check (one
+  task per type) nothing is similar, so the rules decide every pick and the
+  page says so; use Claims Ops Starter or your own suite.
+- The default prompt embedder matches wording, not meaning. For semantic
+  matching set `arena.router_test.learning.embedder: service` (Ollama
+  `nomic-embed-text`).
+- Feeding a match's evidence into your production router's store is planned.
 
 See [SPEC.md](SPEC.md) and [project_plan.md](project_plan.md).
 

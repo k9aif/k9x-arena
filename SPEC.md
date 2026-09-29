@@ -3,8 +3,9 @@
 ## Purpose
 
 K9X Arena runs the same task suite on several LLMs, grades and rates every
-answer, awards 1–5 stars per model per task type, and audits the K9-AIF
-Intelligent Model Router: did the router send each task to the model that
+answer, awards 1–5 stars per model per task type, and tests the K9-AIF
+Intelligent Model Router: taught by the match's scores, does the router pick
+for a held-out task the model that
 actually did best? Its final output is a recommended
 `inference.model_catalog` block the team can paste into a solution's
 `config/config.yaml`.
@@ -52,9 +53,8 @@ Deterministic graders always win over the judge when both apply.
 3. **Run contestants (forced mode).** For each model, run every task N times.
    Group all calls by model so the GPU swaps models as rarely as possible.
    Record output, latency, output tokens, refusals, and errors.
-4. **Run router mode.** Send every task once with its real `task_type` and
-   let `K9ModelRouter` choose. Record which model it chose (the router's
-   own `routing_decisions` table) and the output.
+4. *(Removed: a second, routed generation pass. It only re-read the
+   router's fixed rules. The router test in step 8 replaces it.)*
 5. **Grade.** Deterministic graders first. Open-ended outputs go to two
    judges: `K9PromptEvaluator` (A–F, five weighted dimensions) using the
    judge model, and a second judge pass with the model order shuffled.
@@ -67,14 +67,17 @@ Deterministic graders always win over the judge when both apply.
    quality 60%, consistency across runs 15%, latency 15%, refusal accuracy
    10%. Map the 0–100 score to 1–5 stars (≥90 ★★★★★, ≥75 ★★★★, ≥60 ★★★,
    ≥40 ★★, else ★).
-8. **Audit the router.** For each task type, compare the router's chosen
-   model with the best forced-mode model. Report "router regret": the
-   quality points lost where the router chose a worse model.
+8. **Test the router (held out).** For each task, a fresh `K9ModelRouter`
+   learns the other tasks' pass-1 scores through `record_feedback()` and
+   routes the held-out prompt with `route()` (no model call). Score its pick
+   with that model's real result, next to the best possible pick, the best
+   single model (chosen on the other tasks), your config's rules and a random
+   pick. This is RouterBench-style evaluation.
 9. **Recommend config.** Produce a suggested `inference.model_catalog` and
    `llm_factory.models` block that maps each capability to its best model,
    with each capability on exactly one entry (ties in K9ModelRouter always
    go to the first listed model).
-10. **Report.** Leaderboard, star grid, router audit, per-task drill-down,
+10. **Report.** Leaderboard, star grid, router test, per-task drill-down,
     and the recommended config, in a web UI with live progress streamed from
     the framework's trace-events bus.
 
@@ -96,13 +99,13 @@ unique capability (`contestant_<n>`), plus a `judge` entry with capability
 - **Squads and agents:**
   - `SuiteSquad`: `SuiteLoaderAgent` (BaseAgent), `InputScreenAgent`
     (BaseAgent, Shield ingress).
-  - `ContestantSquad`: `ForcedRunAgent` (BaseAgent), `RouterRunAgent`
+  - `ContestantSquad`: `ForcedRunAgent` (BaseAgent)
     (BaseAgent).
   - `GradingSquad`: `CodeGraderAgent`, `ExtractionGraderAgent`,
     `ReasoningGraderAgent` (BaseAgent, deterministic), `JudgeAgent`
     (K9ValidationLoopAgent wrapping K9PromptEvaluator), `SafetyGraderAgent`
     (BaseAgent, Shield + Guardian).
-  - `ReportSquad`: `ScoringAgent` (BaseAgent), `RouterAuditAgent`
+  - `ReportSquad`: `ScoringAgent` (BaseAgent), `RouterTestAgent`
     (BaseAgent), `ConfigRecommenderAgent` (BaseAgent).
 - **Governance:** k9x_Shield and Granite Guardian on every agent (standard).
 - **Storage:** SQLite by default (runs, outputs, grades, stars); the
@@ -112,7 +115,7 @@ unique capability (`contestant_<n>`), plus a `judge` entry with capability
 
 - Star grid: models × task types.
 - Leaderboard with score, stars, p50/p95 latency, refusal rate, consistency.
-- Router audit with regret per task type and the chosen-vs-best model.
+- Router test: learned router vs best possible, best single model, your rules, random; every pick with its rationale.
 - Recommended `model_catalog` YAML.
 - Per-task drill-down: prompt, each model's output, grades, judge rationale.
 - Exportable run report (Markdown and CSV).

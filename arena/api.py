@@ -278,14 +278,13 @@ def create_match(body: NewMatch, u=Depends(user)):
         suite, tasks = suites.load_suite(body.suite)
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(400, str(exc))
-    # Router mode audits the router's own models; it's only meaningful when at
-    # least one of them is competing (otherwise there's nothing to compare).
+    # The router test needs no extra model calls. "Your rules" is one of its
+    # baselines, available for task types your config sends to a contender.
     router_models = {e["model"] for e in router_under_test(CONFIG).values() if e["model"]}
     router_mode, router_note = body.router_mode, ""
     if router_mode and router_models and not (router_models & set(contenders)):
-        router_mode = False
-        router_note = (f"Router mode skipped: the router under test uses {', '.join(sorted(router_models))}, "
-                       "and none of them is a contender in this match.")
+        router_note = (f"Your router config uses {', '.join(sorted(router_models))}, which isn't competing, "
+                       "so the 'your rules' baseline can't be scored. The learned router is still tested.")
     judge_2 = second_judge_model(CONFIG, contenders)
     if judge_2 and judge_2 not in pulled:
         judge_2 = ""
@@ -370,7 +369,6 @@ def get_match(match_id: int, u=Depends(user)):
         "report": store.get_report(match_id),
         "reviews": reviews,
         "task_types": TASK_TYPES,
-        "router_runs": len([r for r in runs if r["mode"] == "router"]),
     }
 
 

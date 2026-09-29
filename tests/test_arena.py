@@ -99,6 +99,8 @@ def test_per_match_catalog_pins_each_model():
     assert m["inference"]["llm_factory"]["models"]["contestant_2"]["model"] == "b:2"
     assert cfg["governance"]["guardian"]["enabled"] is True
     assert cfg["governance"]["guardian"]["on_unavailable"] == "fail_closed"
+    # pinned contest runs: the learned layer / circuit breaker must be off
+    assert m["inference"]["router"]["learning"]["enabled"] is False
 
 
 def _runs_and_scores():
@@ -117,7 +119,7 @@ def _runs_and_scores():
     return tasks, runs, grades
 
 
-def test_scoring_stars_leaderboard_and_audit():
+def test_scoring_stars_and_leaderboard():
     tasks, runs, grades = _runs_and_scores()
     scores = scoring.final_run_scores(runs, grades, [])
     thresholds = {"5": 90, "4": 75, "3": 60, "2": 40}
@@ -127,10 +129,6 @@ def test_scoring_stars_leaderboard_and_audit():
     assert code_m1["quality"] == 100 and code_m1["stars"] == 5
     board = scoring.leaderboard(rows, thresholds)
     assert board[0]["model"] == "m1" and board[0]["rank"] == 1
-    router_runs = [{"task_id": "C1", "alias": "general"}, {"task_id": "A1", "alias": "general"}]
-    audit = scoring.router_audit(tasks, router_runs, rows, {"general": "m2"})
-    assert {a["verdict"] for a in audit} == {"mismatch"}
-    assert all(a["regret"] > 0 for a in audit)
 
 
 def test_recommended_config_uses_only_router_keys():
@@ -319,14 +317,6 @@ def test_upload_scans_each_task_and_rejects_flagged(monkeypatch, client):
     assert r["accepted"] is False and r["stage"] == "guardian" and "B1" in r["reason"]
 
 
-def test_router_audit_names_router_pick_on_a_quality_tie():
-    rows = [{"model": "a", "task_type": "code", "quality": 100.0},
-            {"model": "b", "task_type": "code", "quality": 100.0}]
-    audit = scoring.router_audit([{"id": "C1", "type": "code"}], [{"task_id": "C1", "alias": "general"}],
-                                 rows, {"general": "b"})
-    assert audit[0]["verdict"] == "match" and audit[0]["best_model"] == "b" and audit[0]["regret"] == 0
-
-
 def test_quality_tie_broken_by_overall_score():
     rows = [{"model": "slow", "task_type": "code", "quality": 100.0, "score": 88.0},
             {"model": "fast", "task_type": "code", "quality": 100.0, "score": 99.0}]
@@ -385,7 +375,7 @@ def test_tie_note_names_the_tied_models():
     assert "coder" not in notes[0]
 
 
-def test_router_mode_skipped_when_router_models_not_competing(client, monkeypatch):
+def test_router_test_stays_on_when_router_models_not_competing(client, monkeypatch):
     import arena.api as api_mod
     monkeypatch.setattr(api_mod.ollama, "list_models", lambda: [
         {"tag": t, "family": "f", "params_b": 8.0} for t in ("small-a:7b", "small-b:8b", "judge:8b")])
@@ -399,4 +389,89 @@ def test_router_mode_skipped_when_router_models_not_competing(client, monkeypatc
                                           "suite": "built-in:quick_check", "runs_per_task": 1, "router_mode": True})
     assert r.status_code == 200, r.text
     m = client.get(f"/api/matches/{r.json()['id']}").json()["match"]
-    assert m["router_mode"] is False and "none of them is a contender" in m["settings"]["router_note"]
+    assert m["router_mode"] is True and "your rules" in m["settings"]["router_note"]
+
+
+# ── router test (held-out, K9ModelRouter learned routing) ─────────────────────
+SQL = ["Write a SQL query returning the top {n} customers by claim total.",
+       "Write a SQL query counting open claims per region for batch {n}.",
+       "Write a SQL query listing adjusters with more than {n} pending claims.",
+       "Write a SQL query finding duplicate claim numbers in table {n}."]
+PROOF = ["Prove that the sum of the first {n} odd numbers is a perfect square.",
+         "Prove by induction that {n} factorial exceeds two to the power n.",
+         "Prove there are infinitely many primes, then discuss case {n}.",
+         "Prove the triangle inequality for vectors in dimension {n}."]
+
+
+def _clustered_match():
+    """Same task type, two kinds of prompt: 'sql' wins on SQL, 'prover' on proofs."""
+    tasks, quality = [], {}
+    for i in range(3):
+        for j, p in enumerate(SQL):
+            tid = f"S{i}{j}"
+            tasks.append({"id": tid, "type": "reasoning", "title": tid, "prompt": p.format(n=i + 3)})
+            quality[tid] = {"sql": {"q": 92.0, "ms": 900.0}, "prover": {"q": 55.0, "ms": 2500.0}}
+        for j, p in enumerate(PROOF):
+            tid = f"P{i}{j}"
+            tasks.append({"id": tid, "type": "reasoning", "title": tid, "prompt": p.format(n=i + 3)})
+            quality[tid] = {"sql": {"q": 40.0, "ms": 900.0}, "prover": {"q": 90.0, "ms": 2500.0}}
+    return tasks, quality
+
+
+def test_router_test_learned_router_beats_best_single_model():
+    from arena import router_eval
+    tasks, quality = _clustered_match()
+    rules = {"general": {"model": "sql", "capabilities": ["general", "chat"]},
+             "reasoning": {"model": "prover", "capabilities": ["reasoning"]}}
+    out = router_eval.evaluate(tasks, quality, ["sql", "prover"], rules)
+    st = out["strategies"]
+    assert out["available"] and out["tasks"] == 24
+    assert st["learned"]["best_picks"] == 24                  # per prompt, not per task type
+    assert st["learned"]["avg"] > st["single"]["avg"] > st["random"]["avg"]
+    assert st["rules"]["avg"] == st["single"]["avg"]          # rules send all reasoning to 'prover'
+    assert out["headroom_captured"] == 100 and out["vs_single"] > 0
+    # SQL prompts share wording, so evidence overrules the rules there; the
+    # proof prompts are worded too differently for the lexical embedder, so
+    # the rules (prover) keep them -- also the right call.
+    assert out["learned_decisions"] == 12
+    assert all(r["strategy"] == "learned" for r in out["rows"] if r["task_id"].startswith("S"))
+    sql_row = next(r for r in out["rows"] if r["task_id"] == "S00")
+    assert sql_row["learned_model"] == "sql" and sql_row["strategy"] == "learned"
+
+
+def test_router_test_leaves_the_task_out():
+    """The held-out task's own score must not leak into its prediction."""
+    from arena import router_eval
+    tasks, quality = _clustered_match()
+    quality["S00"] = {"sql": {"q": 10.0, "ms": 900.0}, "prover": {"q": 99.0, "ms": 2500.0}}
+    row = next(r for r in router_eval.evaluate(tasks, quality, ["sql", "prover"], {})["rows"]
+               if r["task_id"] == "S00")
+    assert row["learned_model"] == "sql" and row["learned_q"] == 10.0   # an honest miss
+
+
+def test_router_test_needs_enough_data():
+    from arena import router_eval
+    tasks, quality = _clustered_match()
+    out = router_eval.evaluate(tasks[:2], quality, ["sql", "prover"], {})
+    assert out["available"] is False
+
+
+def test_task_quality_averages_forced_runs_only():
+    from arena import router_eval
+    tasks = [{"id": "T1", "type": "code"}, {"id": "T2", "type": "code", "screen": {"excluded": True}}]
+    runs = [{"id": 1, "mode": "forced", "model": "a", "task_id": "T1", "latency_ms": 100},
+            {"id": 2, "mode": "forced", "model": "a", "task_id": "T1", "latency_ms": 300},
+            {"id": 3, "mode": "router", "model": "a", "task_id": "T1", "latency_ms": 1},
+            {"id": 4, "mode": "forced", "model": "a", "task_id": "T2", "latency_ms": 1}]
+    scores = {1: {"score": 80}, 2: {"score": 100}, 3: {"score": 0}, 4: {"score": 0}}
+    assert router_eval.task_quality(tasks, runs, scores) == {"T1": {"a": {"q": 90.0, "ms": 200.0}}}
+
+
+def test_router_test_one_task_per_type_falls_back_to_rules():
+    """Quick Check shape: nothing similar to learn from, so rules decide (and say so)."""
+    from arena import router_eval
+    types = ["code", "extraction", "reasoning", "summarization", "chat", "adversarial"]
+    tasks = [{"id": t, "type": t, "title": t, "prompt": f"A {t} task about claims."} for t in types]
+    quality = {t: {"a": {"q": 90.0, "ms": None}, "b": {"q": 80.0, "ms": None}} for t in types}
+    out = router_eval.evaluate(tasks, quality, ["a", "b"], {})
+    assert out["without_evidence"] == 6 and out["learned_decisions"] == 0

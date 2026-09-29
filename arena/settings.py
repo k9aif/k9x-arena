@@ -130,6 +130,10 @@ def build_inference_config(cfg: Dict[str, Any], contestants: List[str], judge: s
         "router": {
             "type": "k9_model_router",
             "default_model": "general",
+            # Contest runs are pinned; the learned layer (and its circuit
+            # breaker) must never reroute a contender's call to another model.
+            # The router test builds its own learned routers (router_eval.py).
+            "learning": {"enabled": False},
             "persistence": {
                 "enabled": True,
                 "provider": "sqlite",

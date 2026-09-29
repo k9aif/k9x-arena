@@ -92,7 +92,7 @@ async function renderLogin() {
   app.innerHTML = `<main class="login"><form id="loginform" aria-labelledby="t">
     <div style="display:flex;justify-content:center">${SWORDS.replace('26', '44').replace('26', '44')}</div>
     <h1 id="t">K9X ARENA</h1>
-    <p class="muted" style="margin:-8px 0 4px;text-align:center">LLMs head to head, graded, starred, and the router audited.</p>
+    <p class="muted" style="margin:-8px 0 4px;text-align:center">LLMs head to head, graded, starred, and the router tested.</p>
     <label class="field">Username<input name="username" autocomplete="username" required></label>
     <label class="field">Password<input name="password" type="password" autocomplete="current-password" required></label>
     <div id="loginerr" class="muted" role="alert"></div>
@@ -182,7 +182,7 @@ function drawLobby() {
         <div class="steps" aria-label="Upload screening">${step('Pre-check', stages[0])}<span class="ln"></span>${step('Granite Guardian', stages[1])}<span class="ln"></span>${step('Accepted', stages[2])}</div>
         ${up ? `<div class="mono" style="font-size:12px;color:${up.accepted ? 'var(--teal-2)' : up.stage === 'checking' ? 'var(--muted)' : 'var(--red-2)'}" role="status">${esc(up.file_name)} · ${esc(up.accepted ? `accepted · ${up.tasks} tasks` : up.stage === 'checking' ? 'scanning…' : up.reason)}</div>` : ''}
       </div>
-      <label class="check"><input type="checkbox" data-act="router" ${L.routerMode ? 'checked' : ''}><span>Also run through the Intelligent Model Router</span></label>
+      <label class="check"><input type="checkbox" data-act="router" ${L.routerMode ? 'checked' : ''}><span>Test the Intelligent Model Router (no extra model calls)</span></label>
       ${routerNote(L, selected)}
       <div class="row muted" style="justify-content:space-between;font-size:13px;border-top:1px solid var(--line);padding-top:12px">
         <span>${selected.length} contenders × ${suite ? suite.tasks : 0} tasks × ${L.runs} runs · about ${estH.toFixed(1)} h</span><span>Guardian screens every prompt</span></div>
@@ -190,92 +190,17 @@ function drawLobby() {
     </aside></div></main>`;
 }
 function routerNote(L, selected) {
+  if (!L.routerMode) return '';
   const rut = Object.entries(L.routerUnderTest || {});
-  if (!L.routerMode || !rut.length) return '';
-  const missing = rut.filter(([, m]) => !selected.includes(m));
-  const list = rut.map(([a, m]) => `${esc(a)} → <span class="mono">${esc(m)}</span>`).join(' · ');
-  const warn = missing.length === rut.length
-    ? `<br><span style="color:var(--amber)">None of the router's models is entered, so router mode will be skipped. Enter ${missing.map(([, m]) => esc(m)).join(' and ')} to audit it.</span>`
-    : missing.length ? `<br><span style="color:var(--amber)">${missing.map(([, m]) => esc(m)).join(', ')} isn't entered; task types routed to it can't be audited.</span>` : '';
-  return `<div class="muted" style="font-size:12.5px;line-height:1.5;margin-top:-8px">Router under test: ${list}${warn}</div>`;
-}
-
-function judgeNote(L, selected) {
-  const fam = (tag) => (L.models.find((m) => m.tag === tag) || {}).family;
-  const jf = fam(L.judge);
-  const clash = jf ? selected.filter((t) => fam(t) === jf) : [];
-  const second = L.secondJudge && !selected.includes(L.secondJudge) ? `second opinion from <span class="mono">${esc(L.secondJudge)}</span>` : 'second pass resamples the same judge';
-  return `<div class="muted" style="font-size:12.5px;line-height:1.5">Judging is anonymized and calibrated; ${second}.${clash.length ? `<br><span style="color:var(--amber)">Fairness: the judge is the same model family (${esc(jf)}) as ${clash.map(esc).join(', ')}. A judge from another family is fairer.</span>` : ''}</div>`;
-}
-
-function statusBadge(s) {
-  const map = { completed: 'teal', running: 'amber', queued: 'grey', paused: 'grey', failed: 'red' };
-  return `<span class="badge ${map[s] || 'grey'}">${esc(s)}</span>`;
-}
-function rememberMatches(list) {
-  const running = list.find((m) => m.status === 'running');
-  S.lastMatch = running ? running.id : (list[0] && list[0].id);
-  const done = list.find((m) => m.status === 'completed'); S.lastDone = done && done.id;
-}
-
-// ── delegated events ──────────────────────────────────────────────────────────
-app.addEventListener('click', async (ev) => {
-  const row = ev.target.closest('tr[data-href]');
-  if (row && !ev.target.closest('button,a')) { location.hash = row.dataset.href; return; }
-  const el = ev.target.closest('[data-act]'); if (!el) return;
-  const act = el.dataset.act;
-  if (act === 'logout') { await api('/api/logout', { method: 'POST' }).catch(() => {}); S.me = null; location.hash = '#/login'; }
-  if (act === 'start') startMatch();
-  if (act === 'celebrate' && S.lastReport) celebrate(S.lastReport.leaderboard, S.lastReport.judge, S.lastReport.verdict);
-  if (act === 'close-celebration') closeCelebration();
-  if (act === 'showall' || act === 'showtop') { S.showAllModels = act === 'showall'; renderLobby(); }
-  if (['pause', 'cancel', 'resume'].includes(act)) {
-    try { await api(`/api/matches/${el.dataset.id}/${act}`, { method: 'POST' }); } catch (e) { alert(e.message); }
-    if (act === 'resume') route();
-  }
-  if (act === 'delete' && confirm(`Delete match #${el.dataset.id} and all its results?`)) {
-    try { await api(`/api/matches/${el.dataset.id}`, { method: 'DELETE' }); route(); } catch (e) { alert(e.message); }
-  }
-  if (act === 'copy') {
-    const txt = document.getElementById('yaml').textContent;
-    try { await navigator.clipboard.writeText(txt); el.textContent = 'Copied'; setTimeout(() => { el.textContent = 'Copy'; }, 1500); } catch { el.textContent = 'Select and copy'; }
-  }
-  if (act === 'decide') {
-    const input = document.getElementById(`rv-${el.dataset.id}`);
-    try { await api(`/api/reviews/${el.dataset.id}`, { method: 'POST', body: JSON.stringify({ score: +input.value }) }); route(); } catch (e) { alert(e.message); }
-  }
-});
-app.addEventListener('change', async (ev) => {
-  const el = ev.target.closest('[data-act]'); if (!el || !S.lobby) return;
-  const L = S.lobby, act = el.dataset.act;
-  if (act === 'toggle') { el.checked ? L.selected.add(el.dataset.tag) : L.selected.delete(el.dataset.tag); }
-  if (act === 'judge') { L.judge = el.value; L.selected.delete(el.value); }
-  if (act === 'runs') L.runs = +el.value;
-  if (act === 'suite') L.suite = el.value;
-  if (act === 'router') L.routerMode = el.checked;
-  if (act === 'upload' && el.files[0]) {
-    const file = el.files[0];
-    L.upload = { stage: 'checking', file_name: file.name }; drawLobby();
-    const fd = new FormData(); fd.append('file', file);
-    try {
-      const r = await api('/api/uploads', { method: 'POST', body: fd });
-      L.upload = r;
-      if (r.accepted) { L.suites = await api('/api/suites'); L.suite = r.suite_key; }
-    } catch (e) { L.upload = { stage: 'precheck', file_name: file.name, reason: e.message }; }
-  }
-  drawLobby();
-});
-async function startMatch() {
-  const L = S.lobby; L.busy = true; L.error = null; drawLobby();
-  try {
-    const r = await api('/api/matches', { method: 'POST', body: JSON.stringify({
-      contenders: [...L.selected].filter((t) => t !== L.judge), judge: L.judge, suite: L.suite, runs_per_task: L.runs, router_mode: L.routerMode }) });
-    L.busy = false; location.hash = `#/match/${r.id}`;
-  } catch (e) { L.busy = false; L.error = e.message; drawLobby(); }
+  const inMatch = rut.filter(([, m]) => selected.includes(m));
+  const rules = !rut.length ? '' : inMatch.length
+    ? ` Your config (${rut.map(([a, m]) => `${esc(a)} → <span class="mono">${esc(m)}</span>`).join(' · ')}) is scored alongside it.`
+    : ` <span style="color:var(--amber)">Your config's models (${rut.map(([, m]) => esc(m)).join(', ')}) aren't entered, so "your rules" can't be scored; the learned router still is.</span>`;
+  return `<div class="muted" style="font-size:12.5px;line-height:1.5;margin-top:-8px">After scoring, each task is hidden in turn; K9ModelRouter learns from the others' scores and picks a model for it.${rules}</div>`;
 }
 
 // ── live match (lanes + orbit) ────────────────────────────────────────────────
-const PHASES = [['screening', 'Screening'], ['answering', 'Answering'], ['router', 'Router mode'], ['grading', 'Grading'], ['judging', 'Judging'], ['scoring', 'Scoring']];
+const PHASES = [['screening', 'Screening'], ['answering', 'Answering'], ['grading', 'Grading'], ['judging', 'Judging'], ['scoring', 'Scoring'], ['router', 'Router test']];
 async function renderMatch(id, view) {
   if (!id) { location.hash = '#/history'; return; }
   S.stream = { events: [] };
@@ -380,7 +305,7 @@ function drawOctagon() {
   const guardianActive = phase === 'screening' || cur.model === 'guardian';
   const routing = cur.model === 'router' || phase === 'router';
   const scoringNow = phase === 'scoring';
-  const matSub = routing ? 'routing by task type' : scoringNow ? 'scoring…' : 'Intelligent Model Router';
+  const matSub = routing ? 'router test · held-out tasks' : scoringNow ? 'scoring…' : 'Intelligent Model Router';
   const cageLabel = cur.model === 'guardian' ? `GRANITE GUARDIAN · SAFETY PASS · ${cur.task_id} (${short(cur.for_model || '')})`
     : phase === 'screening' ? 'GRANITE GUARDIAN · SCREENING' : 'GRANITE GUARDIAN · CAGE';
   const target = fighters.find((f) => f.active) || (judgeActive ? { fx: cx, fy: cy + R + 70 } : null);
@@ -432,7 +357,7 @@ function drawOctagon() {
       <span class="muted" style="font-size:13px">${ans} of ${tot} answers</span>
       <div class="phasestrip" aria-label="Match phases">${PHASES.map(([k, label]) => { const st = phaseState(m, k); return `<span class="ps ${st}">${st === 'done' ? '✓ ' : ''}${label}</span>`; }).join('')}</div>
       <div class="box"><span style="font-size:12px;color:var(--teal-2);letter-spacing:1px">NOW</span>
-        ${cur.model ? `<span class="mono" style="font-size:15px">${esc(cur.model === 'judge' ? m.judge + ' (judging)' : cur.model === 'router' ? 'K9ModelRouter (router mode)' : cur.model === 'guardian' ? 'Granite Guardian (safety pass on ' + (cur.for_model || '') + ')' : cur.model)}</span><span style="font-size:13px;color:var(--text-2)">${esc(cur.task_id)} · ${esc(cur.title)}</span>` : `<span class="muted" style="font-size:13px">${m.status === 'completed' ? 'Fight over' : phase === 'grading' ? 'Grading answers against right answers' : phase === 'scoring' ? 'Scoring the fight' : 'Between rounds'}</span>`}</div>
+        ${cur.model ? `<span class="mono" style="font-size:15px">${esc(cur.model === 'judge' ? m.judge + ' (judging)' : cur.model === 'router' ? 'K9ModelRouter (router test)' : cur.model === 'guardian' ? 'Granite Guardian (safety pass on ' + (cur.for_model || '') + ')' : cur.model)}</span><span style="font-size:13px;color:var(--text-2)">${esc(cur.task_id)} · ${esc(cur.title)}</span>` : `<span class="muted" style="font-size:13px">${m.status === 'completed' ? 'Fight over' : phase === 'grading' ? 'Grading answers against right answers' : phase === 'scoring' ? 'Scoring the fight' : phase === 'router' ? 'Testing the router on held-out tasks' : 'Between rounds'}</span>`}</div>
       <div class="row"><div class="viewswitch" role="group" aria-label="View"><a href="#/match/${m.id}">Lanes</a><a href="#/match/${m.id}/octagon" aria-current="page">Octagon</a></div>${matchControls(m)}</div>
     </aside>
     <aside class="hud right" aria-label="Scores"><span class="muted" style="font-size:12px;letter-spacing:1px">SCORECARD · AVERAGE QUALITY</span>${board}</aside>
@@ -463,7 +388,7 @@ async function renderResults(id) {
       <td>${na ? '<span class="badge grey" title="The router chose a model that is not competing in this match, so its answer quality is unknown.">Router\'s model not in match</span>' : ok ? '<span class="badge teal">Match</span>' : '<span class="badge amber">Mismatch</span>'}</td>
       <td class="display" style="font-size:18px;text-align:right;color:${ok || na ? 'var(--muted)' : 'var(--amber)'}">${a.regret == null ? '—' : ok ? '0' : '−' + a.regret}</td></tr>`; }).join('');
   const tasks = D.tasks.map((t) => `<tr class="click" data-href="#/task/${id}/${encodeURIComponent(t.id)}"><td class="mono muted">${esc(t.id)}</td><td><span class="tag">${esc(t.type)}</span></td><td>${esc(t.title)}${t.screen && t.screen.excluded ? ' <span class="badge red">Excluded by screening</span>' : ''}</td>${models.map((mdl) => { const v = (D.task_scores[t.id] || {})[mdl]; return `<td class="display" style="font-size:18px">${v == null ? '—' : v.toFixed(0)}</td>`; }).join('')}</tr>`).join('');
-  const w = R.winner || {}; const J = R.judge || {}; const RT = R.router || {};
+  const w = R.winner || {}; const J = R.judge || {}; const RT = R.router_test || null;
   const seenKey = `k9x-arena-celebrated-${id}`;
   let seen = false; try { seen = localStorage.getItem(seenKey) === '1'; } catch { /* storage blocked */ }
   if (m.status === 'completed' && R.leaderboard && R.leaderboard.length && (!seen || S.celebrate === id)) {
@@ -479,8 +404,7 @@ async function renderResults(id) {
     ${J.pending ? `<div class="banner info" style="margin-top:14px">${J.pending} judged answers await review, so these results are provisional. <a href="#/reviews">Review them</a>.</div>` : ''}
     <section class="kpis" aria-label="Summary">
       ${verdictTile(R)}
-      <div class="kpi"><div class="muted" style="font-size:13px">Router picked the best model</div><div class="v"><span class="big">${RT.types ? `${RT.matches} of ${RT.types}` : '—'}</span><span class="muted">task types</span></div></div>
-      <div class="kpi"><div class="muted" style="font-size:13px">Router regret</div><div class="v"><span class="big">${RT.avg_regret ?? '—'}</span><span class="muted">points lost on average</span></div></div>
+${routerKpis(RT, R.router)}
       <div class="kpi"><div class="muted" style="font-size:13px">Judge disagreement</div><div class="v"><span class="big">${J.disagreements ?? 0} of ${J.judged ?? 0}</span><span class="muted">sent to review</span></div>
         ${J.checked ? `<div style="font-size:12px;margin-top:2px;color:${J.reliable ? 'var(--teal-2)' : 'var(--amber)'}">Calibration: planted poor answers scored ${J.planted_avg} ${J.reliable ? '· judge discriminates' : '· judge too lenient'}</div>` : ''}</div>
     </section>
@@ -491,13 +415,49 @@ async function renderResults(id) {
         <section class="panel"><h2>Tasks</h2><table class="grid"><thead><tr><th>Task</th><th>Type</th><th>Title</th>${models.map((mdl) => `<th class="mono" style="text-transform:none">${esc(short(mdl))}</th>`).join('')}</tr></thead><tbody>${tasks}</tbody></table></section>
       </div>
       <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
-        <section class="panel"><h2>Router audit</h2><p class="muted" style="font-size:12.5px;margin:0 0 8px">Did K9ModelRouter send each task type to the model that scored best?</p>
-          ${audit ? `<table class="grid"><tbody>${audit}</tbody></table>` : `<div class="empty">${esc((m.settings && m.settings.router_note) || 'Router mode was off for this match.')}</div>`}</section>
+        ${RT ? routerPanel(RT, m) : `<section class="panel"><h2>Router audit</h2><p class="muted" style="font-size:12.5px;margin:0 0 8px">Did K9ModelRouter send each task type to the model that scored best? (matches before the router test)</p>
+          ${audit ? `<table class="grid"><tbody>${audit}</tbody></table>` : `<div class="empty">${esc((m.settings && m.settings.router_note) || 'Router mode was off for this match.')}</div>`}</section>`}
         <section class="panel teal"><div class="row"><h2 class="grow" style="margin:0">Recommended router config</h2><button class="btn small" data-act="copy">Copy</button><a class="btn small primary" href="/api/matches/${id}/config.yaml">Download</a></div>
           <pre class="yaml" id="yaml" style="margin-top:10px">${esc(R.recommended_yaml || '')}</pre>
           <ul class="muted" style="font-size:12.5px;margin:10px 0 0;padding-left:18px">${(R.recommended_notes || []).map((n) => `<li>${esc(n)}</li>`).join('')}</ul></section>
       </div>
     </div></main>`;
+}
+
+function routerKpis(RT, legacy) {
+  if (!RT && legacy) {  // matches from before the router test
+    return `<div class="kpi"><div class="muted" style="font-size:13px">Router picked the best model</div><div class="v"><span class="big">${legacy.types ? `${legacy.matches} of ${legacy.types}` : '—'}</span><span class="muted">task types</span></div></div>
+      <div class="kpi"><div class="muted" style="font-size:13px">Router regret</div><div class="v"><span class="big">${legacy.avg_regret ?? '—'}</span><span class="muted">points lost on average</span></div></div>`;
+  }
+  if (!RT || !RT.available) return `<div class="kpi"><div class="muted" style="font-size:13px">Router test</div><div class="v"><span class="big">—</span><span class="muted">${esc((RT && RT.reason) || 'not run')}</span></div></div><div class="kpi"><div class="muted" style="font-size:13px">Router vs best single model</div><div class="v"><span class="big">—</span></div></div>`;
+  const st = RT.strategies; const d = RT.vs_single; const sign = d > 0 ? '+' : d < 0 ? '−' : '±';
+  return `<div class="kpi"><div class="muted" style="font-size:13px">Router picked the best model</div><div class="v"><span class="big">${st.learned.best_picks} of ${st.learned.tasks}</span><span class="muted">held-out tasks</span></div></div>
+    <div class="kpi"><div class="muted" style="font-size:13px">Router vs best single model</div><div class="v"><span class="big" style="color:${d > 0 ? 'var(--teal-2)' : d < 0 ? 'var(--amber)' : 'inherit'}">${sign}${Math.abs(d).toFixed(1)}</span><span class="muted">points · ${esc(short(RT.single_model))}</span></div></div>`;
+}
+
+function routerPanel(RT, m) {
+  const note = m.settings && m.settings.router_note;
+  if (!RT.available) return `<section class="panel"><h2>Router test</h2><div class="empty">${esc(RT.reason || 'Not run.')}</div></section>`;
+  const st = RT.strategies; const top = st.oracle.avg || 1;
+  const line = (label, key, sub) => { const v = st[key];
+    return `<tr><td>${label}${sub ? `<div class="muted" style="font-size:11.5px">${sub}</div>` : ''}</td>${v ? `<td style="width:38%"><div class="bar"><span style="width:${Math.max(2, 100 * v.avg / top).toFixed(1)}%;background:${key === 'learned' ? 'var(--teal-2)' : key === 'oracle' ? 'var(--amber)' : 'var(--muted)'}"></span></div></td>
+      <td class="display" style="font-size:18px;text-align:right">${v.avg.toFixed(1)}</td><td class="muted" style="font-size:12px;text-align:right">${v.best_picks}/${v.tasks}</td>` : '<td colspan="3" class="muted" style="font-size:12px">not scored: config models not competing</td>'}</tr>`; };
+  const rows = RT.rows.map((r) => { const hit = r.best - (r.learned_q ?? -1) <= 0.5;
+    return `<tr><td class="mono muted" style="font-size:12px">${esc(r.task_id)}</td><td class="mono" style="font-size:12px">${esc(short(r.learned_model))}${r.strategy === 'learned' ? ' <span class="badge teal" title="' + esc(r.rationale) + '">learned</span>' : ' <span class="badge grey" title="' + esc(r.rationale) + '">rules</span>'}</td>
+      <td class="display" style="font-size:16px;text-align:right;color:${hit ? 'var(--teal-2)' : 'var(--amber)'}">${r.learned_q == null ? '—' : r.learned_q.toFixed(0)}</td><td class="muted" style="font-size:12px">best ${r.best.toFixed(0)} · ${esc(r.best_models.map(short).join(', '))}</td></tr>`; }).join('');
+  const captured = RT.headroom_captured;
+  return `<section class="panel"><h2>Router test</h2>
+    <p class="muted" style="font-size:12.5px;margin:0 0 8px">Each task was hidden in turn. K9ModelRouter learned from the other ${RT.tasks - 1} tasks' scores, then picked a model for the hidden one; the pick is scored with that model's real result. No model was run again.</p>
+    <table class="grid"><thead><tr><th>Strategy</th><th></th><th style="text-align:right">Avg</th><th style="text-align:right" title="Tasks where it picked a top-scoring model">Best</th></tr></thead><tbody>
+      ${line('Best possible', 'oracle', 'top contender on every task')}
+      ${line('K9ModelRouter, learned', 'learned', `${RT.learned_decisions} of ${RT.tasks} picks overruled the rules`)}
+      ${line('Best single model', 'single', esc(short(RT.single_model)) + ' for everything')}
+      ${line('Your rules', 'rules', 'your router config, by task type')}
+      ${line('Random pick', 'random', 'the average contender')}</tbody></table>
+    ${captured != null ? `<p class="muted" style="font-size:12.5px;margin:8px 0 0">The learned router captured <b style="color:var(--text)">${captured}%</b> of the gap between the best single model and the best possible pick.</p>` : `<p class="muted" style="font-size:12.5px;margin:8px 0 0">One model was best at nearly everything, so there was little for routing to gain.</p>`}
+    ${RT.without_evidence === RT.tasks ? `<p class="muted" style="font-size:12.5px;margin:6px 0 0;color:var(--amber)">No hidden task had similar graded tasks to learn from (this suite has about one task per type), so the rules decided every pick. Run a larger suite, such as Claims Ops Starter, to test learned routing.</p>` : RT.without_evidence ? `<p class="muted" style="font-size:12px;margin:6px 0 0">${RT.without_evidence} of ${RT.tasks} hidden tasks had no similar graded tasks, so the rules picked those.</p>` : ''}
+    ${note ? `<p class="muted" style="font-size:12px;margin:6px 0 0;color:var(--amber)">${esc(note)}</p>` : ''}
+    <details style="margin-top:10px"><summary class="muted" style="cursor:pointer;font-size:13px">Every pick</summary><table class="grid" style="margin-top:6px"><tbody>${rows}</tbody></table></details></section>`;
 }
 
 function verdictTile(R) {
@@ -551,13 +511,13 @@ async function renderReviews() {
 function renderArchitecture() {
   const steps = [
     ['1 · SuiteSquad', 'Loads the task suite. Every task prompt is screened by k9x_Shield and Granite Guardian before any contender sees it. Guardian fails closed: if it is down, nothing runs.'],
-    ['2 · ContestantSquad', 'Runs every task on every contender, grouped by model so the GPU swaps as rarely as possible, then once more through the Intelligent Model Router with the real task type.'],
+    ['2 · ContestantSquad', 'Runs every task on every contender, grouped by model so the GPU swaps as rarely as possible. Each contender is pinned through llm_invoke and the router by its own catalog capability.'],
     ['3 · GradingSquad', 'Grades against right answers first (unit tests in a sandbox, JSON fields, exact answers), then Granite Guardian’s safety pass on adversarial answers, then two anonymized judge passes. Disagreements go to Reviews.'],
-    ['4 · ReportSquad', 'Turns grades into scores and stars, audits the router’s choices against the best contender, and writes a recommended model_catalog.'],
+    ['4 · ReportSquad', 'Turns grades into scores and stars, tests the Intelligent Model Router on held-out tasks (it learns from the other tasks’ scores, then picks; no model is run again), and writes a recommended model_catalog.'],
   ];
   app.innerHTML = header('architecture') + `<main class="page" style="display:flex;flex-direction:column;gap:18px">
     <h1 class="display" style="margin:0;font-size:40px">Architecture</h1>
-    <section class="panel" style="padding:12px"><img src="/static/overview.png" alt="K9X Arena at a glance: you bring models, a task suite and a judge; four stages Screen, Contest, Grade and Report; you get star ratings, a router audit and a recommended router config. Granite Guardian and k9x_Shield govern throughout; every model call goes through llm_invoke and the Intelligent Model Router to your Ollama GPU." style="width:100%;height:auto;border-radius:10px;display:block"></section>
+    <section class="panel" style="padding:12px"><img src="/static/overview.png" alt="K9X Arena at a glance: you bring models, a task suite and a judge; four stages Screen, Contest, Grade and Report; you get star ratings, a router test and a recommended router config. Granite Guardian and k9x_Shield govern throughout; every model call goes through llm_invoke and the Intelligent Model Router to your Ollama GPU." style="width:100%;height:auto;border-radius:10px;display:block"></section>
     <h2 class="display" style="margin:6px 0 0;font-size:28px">In detail</h2>
     <p class="muted" style="margin:0;max-width:900px">K9X Arena is a K9-AIF solution: its router, orchestrator, squads and agents extend the framework’s building blocks, and every model call goes through the framework’s llm_invoke and K9ModelRouter.</p>
     <div class="results" style="grid-template-columns:minmax(0,1fr) 440px">
@@ -568,8 +528,8 @@ function renderArchitecture() {
           <table class="grid"><thead><tr><th></th><th>Model router</th><th>Arena grading</th></tr></thead><tbody>
             <tr><td class="muted">When</td><td>Before each call, at runtime</td><td>After the answers, offline</td></tr>
             <tr><td class="muted">Question</td><td>Which model should answer?</td><td>How good was each answer?</td></tr>
-            <tr><td class="muted">Output</td><td>One model per request</td><td>Stars, router audit, recommended config</td></tr></tbody></table>
-          <p class="muted" style="font-size:13px;margin:10px 0 0">The router scores each request on its own (capability, sensitivity, latency, cost). It records its decisions but does not learn from them yet; the arena’s recommended config is how evidence feeds back into it.</p></section>
+            <tr><td class="muted">Output</td><td>One model per request</td><td>Stars, router test, recommended config</td></tr></tbody></table>
+          <p class="muted" style="font-size:13px;margin:10px 0 0">The router starts from rules (capability, sensitivity, latency, cost). Given graded results through record_feedback(), it predicts each model’s quality on a new prompt from similar prompts it has seen, and overrules the rules when the evidence is clearly better (k-NN, in the style of Not Diamond and RouteLLM). The arena’s grades are that evidence; the router test measures how well it uses them.</p></section>
       </div>
     </div></main>`;
 }

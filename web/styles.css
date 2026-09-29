@@ -70,6 +70,7 @@ button { cursor: pointer; }
 @keyframes blink { 50% { opacity: .3 } }
 .bar { height: 10px; border-radius: 999px; background: var(--line); overflow: hidden; }
 .bar > div { height: 100%; background: var(--teal); transition: width .6s ease; }
+.bar > span { display: block; height: 100%; border-radius: 999px; }
 table.grid { width: 100%; border-collapse: collapse; font-size: 14px; }
 table.grid th { text-align: left; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; font-weight: 500; padding: 0 8px 8px; border-bottom: 1px solid var(--line); }
 table.grid td { padding: 10px 8px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }

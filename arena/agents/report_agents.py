@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # K9-AIF Framework
-"""ReportSquad agents: stars and leaderboard, router audit, recommended
-router config. Pure computation over the store — rerun after reviews."""
+"""ReportSquad agents: stars and leaderboard, the held-out router test,
+recommended router config. Pure computation over the store — rerun after
+reviews."""
 
 from __future__ import annotations
 
 from typing import Any, Dict
 
-from arena import store
+from arena import live, router_eval, scoring, store
 from arena.agents.common import ArenaAgent
-from arena import scoring
+from arena.settings import router_under_test
 
 
 def _thresholds(config):
@@ -45,22 +46,32 @@ class ScoringAgent(ArenaAgent):
                                                       [s["score"] for s in judged])}}
 
 
-class RouterAuditAgent(ArenaAgent):
-    layer = "K9X Arena RouterAuditAgent SBB"
+class RouterTestAgent(ArenaAgent):
+    """Held-out test of K9ModelRouter's learned routing on this match's
+    scores (arena/router_eval.py). No model is run: pass-1 scores are the
+    ground truth, and route() makes no model call."""
+
+    layer = "K9X Arena RouterTestAgent SBB"
 
     def execute(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         match_id = payload["match_id"]
-        rows = payload.get("scored", {}).get("rows", [])
-        router_runs = store.get_runs(match_id, "router")
-        alias_models = {r["alias"]: r["model"] for r in router_runs if r.get("alias")}
-        audit = scoring.router_audit(store.get_tasks(match_id), router_runs, rows, alias_models)
-        store.save_audit(match_id, audit)
-        judged = [a for a in audit if a["verdict"] in ("match", "mismatch")]
-        regrets = [max(0.0, a["regret"]) for a in judged]
-        return {"audit": audit,
-                "matches": sum(1 for a in judged if a["verdict"] == "match"),
-                "types": len(judged),
-                "avg_regret": round(sum(regrets) / len(regrets), 1) if regrets else None}
+        match = store.get_match(match_id)
+        if not match["router_mode"]:
+            return {"available": False, "reason": "The router test was off for this match."}
+        store.update_match(match_id, phase="router")
+        tasks = store.get_tasks(match_id)
+        runs = store.get_runs(match_id, "forced")
+        scores = scoring.final_run_scores(runs, store.get_grades(match_id), store.list_reviews(match_id))
+        quality = router_eval.task_quality(tasks, runs, scores)
+        learning = self.config.get("arena", {}).get("router_test", {}).get("learning", {}) or {}
+        result = router_eval.evaluate(tasks, quality, match["contenders"], router_under_test(self.config),
+                                      learning=learning,
+                                      progress=lambda i, n: live.set_progress("router", i, n))
+        if result.get("available"):
+            st = result["strategies"]
+            live.emit("Router", f"held-out test · learned router {st['learned']['avg']} vs best single "
+                                f"{st['single']['avg']} vs best possible {st['oracle']['avg']}")
+        return result
 
 
 class ConfigRecommenderAgent(ArenaAgent):
@@ -69,7 +80,7 @@ class ConfigRecommenderAgent(ArenaAgent):
     def execute(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         match_id = payload["match_id"]
         scored = payload.get("scored", {})
-        audit = payload.get("audited", {})
+        test = payload.get("router_test", {}) or {}
         yaml_text, notes = scoring.recommend_config(scored.get("rows", []))
         board = scored.get("leaderboard", [])
         margin = float(self.config.get("arena", {}).get("scoring", {}).get("tie_margin", 2.0))
@@ -79,8 +90,7 @@ class ConfigRecommenderAgent(ArenaAgent):
             "winner": board[0] if board and how["kind"] != "draw" else None,
             "verdict": {**how, "margin": margin},
             "judge": scored.get("judge", {}),
-            "router": {"matches": audit.get("matches"), "types": audit.get("types"),
-                       "avg_regret": audit.get("avg_regret")},
+            "router_test": test,
             "recommended_yaml": yaml_text,
             "recommended_notes": notes,
         }

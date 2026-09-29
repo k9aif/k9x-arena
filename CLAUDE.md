@@ -6,7 +6,8 @@ file covers only what's specific to the arena.
 ## What it is
 
 A K9-AIF solution (SBBs on `k9_aif_abb`, installed from PyPI) that runs LLMs
-head to head, grades them, stars them, audits K9ModelRouter and recommends a
+head to head, grades them, stars them, tests K9ModelRouter's learned routing
+on held-out tasks and recommends a
 `model_catalog`. FastAPI backend + vanilla-JS UI in `web/` (no build step).
 
 ## Layout
@@ -21,7 +22,8 @@ arena/
   squads/           arena_squads.yaml (Suite, Contestant, Grading, Report)
   agents/           the 12 agents + yaml/ role/goal files
   graders.py        deterministic graders (code sandbox, extraction, reasoning, adversarial)
-  scoring.py        stars, leaderboard, router audit, recommended config (pure functions)
+  scoring.py        stars, leaderboard, recommended config (pure functions)
+  router_eval.py    held-out router test: fresh K9ModelRouters taught via record_feedback()
   store.py          SQLite
   live.py           running-match state, pause/cancel, trace_events → event log
   settings.py       .env + config.yaml; build_inference_config() per match
@@ -34,15 +36,19 @@ docs/architecture.puml
 
 - **Every model call goes through `llm_invoke`.** Forced mode pins a
   contender via its unique capability (`contestant_<n>`); the judge uses
-  `judge`; router mode sends the real task type. Never call LLMFactory or the
-  router directly.
+  `judge`. Never call LLMFactory or `router.invoke()` directly. The one
+  exception is `router_eval.py`, which builds its own K9ModelRouters on
+  in-memory stores and calls only `record_feedback()` and `route()` (no
+  model call).
+- **The match router has learning off** (`build_inference_config`). The
+  circuit breaker would otherwise reroute a failing contender's pinned runs
+  to another model and corrupt the contest.
 - **Screen each prompt once** (`arena/screening.py`): built-in suites are trusted (no
   Guardian at match time); uploads are scanned per task at upload and cached;
   cache misses are scanned on first use.
 - **Granite Guardian is mandatory and fails closed** — `settings.load_config()`
   forces it on; uploads and match starts are refused when it's offline.
-- **Batch GPU work by phase** (screen → answer by model → router → grade →
-  judge) so Ollama swaps models as rarely as possible. Don't interleave
+- **Batch GPU work by phase** (screen → answer by model → grade → judge) so Ollama swaps models as rarely as possible. Don't interleave
   Guardian or judge calls with contender calls.
 - **Escape all model output** in the UI (`esc()` in app.js).
 - The recommended config must use only keys K9ModelRouter reads

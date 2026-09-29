@@ -13,13 +13,11 @@ squads:
         result_key: screening
 
   ContestantSquad:
-    description: Run every task on every contender (grouped by model), then once through the router.
-    agents: [ForcedRunAgent, RouterRunAgent]
+    description: Run every task on every contender, grouped by model.
+    agents: [ForcedRunAgent]
     flow:
       - agent: ForcedRunAgent
         result_key: forced
-      - agent: RouterRunAgent
-        result_key: routed
 
   GradingSquad:
     description: Deterministic graders, then Guardian's safety pass, then the LLM judge.
@@ -37,12 +35,12 @@ squads:
         result_key: judged
 
   ReportSquad:
-    description: Stars and leaderboard, router audit, recommended router config.
-    agents: [ScoringAgent, RouterAuditAgent, ConfigRecommenderAgent]
+    description: Stars and leaderboard, the held-out router test, recommended router config.
+    agents: [ScoringAgent, RouterTestAgent, ConfigRecommenderAgent]
     flow:
       - agent: ScoringAgent
         result_key: scored
-      - agent: RouterAuditAgent
-        result_key: audited
+      - agent: RouterTestAgent
+        result_key: router_test
       - agent: ConfigRecommenderAgent
         result_key: report
