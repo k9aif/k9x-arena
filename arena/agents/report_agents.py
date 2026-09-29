@@ -29,7 +29,8 @@ class ScoringAgent(ArenaAgent):
         weights = self.config.get("arena", {}).get("scoring", {}).get("weights", {})
         rows = scoring.compute_stars(tasks, runs, scores, weights, _thresholds(self.config))
         store.save_stars(match_id, rows)
-        board = scoring.leaderboard(rows, _thresholds(self.config))
+        margin = float(self.config.get("arena", {}).get("scoring", {}).get("tie_margin", 2.0))
+        board = scoring.leaderboard(rows, _thresholds(self.config), margin)
         judged = [s for s in scores.values() if s["source"] in ("judge", "review")]
         reviews = store.list_reviews(match_id)
         match = store.get_match(match_id)

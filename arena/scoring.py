@@ -131,7 +131,8 @@ def compute_stars(tasks: List[Dict[str, Any]], runs: List[Dict[str, Any]],
     return rows
 
 
-def leaderboard(star_rows: List[Dict[str, Any]], thresholds: Dict[str, Any]) -> List[Dict[str, Any]]:
+def leaderboard(star_rows: List[Dict[str, Any]], thresholds: Dict[str, Any],
+                margin: float = 2.0) -> List[Dict[str, Any]]:
     by_model: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for r in star_rows:
         by_model[r["model"]].append(r)
@@ -149,7 +150,12 @@ def leaderboard(star_rows: List[Dict[str, Any]], thresholds: Dict[str, Any]) -> 
             "answers": sum(r["answers"] for r in rs),
             "spread": round(statistics.mean(r["spread"] for r in rs), 1),
         })
-    board.sort(key=lambda b: -b["score"])
+    # Quality first: models within `margin` of the best answer quality rank
+    # ahead of the rest, then by overall score. Otherwise a fast model with
+    # wrong answers can top the board on speed alone (seen live: 82.5
+    # quality ranked #1 over 99.5 and 99.7).
+    top_q = max((b["quality"] for b in board), default=0)
+    board.sort(key=lambda b: (top_q - b["quality"] > margin, -b["score"]))
     for i, b in enumerate(board, start=1):
         b["rank"] = i
     return board

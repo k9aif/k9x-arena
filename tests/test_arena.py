@@ -551,3 +551,18 @@ def test_recommendation_stays_on_the_leader_within_the_tie_margin():
     rows = [dict(r, quality=80.0) if r["model"] == "qwen" and r["task_type"] == "code" else r for r in rows]
     doc = yaml.safe_load(scoring.recommend_config(rows, margin=2.0, leader="qwen")[0])
     assert {"model": "granite"} in doc["inference"]["llm_factory"]["models"].values()
+
+
+def test_fast_but_wrong_model_cannot_win():
+    """Match #4: qwen3-coder (quality 82.5, fastest) was ranked #1 and named
+    winner over qwen3.8 (99.5) and gemma4 (99.7)."""
+    rows = []
+    for model, q, lat in (("coder", 82.5, 100.0), ("qwen38", 99.5, 20.0), ("gemma4", 99.7, 5.0)):
+        for t in ("code", "chat"):
+            score = 0.6 * q + 0.15 * 100 + 0.15 * lat + 0.1 * 100
+            rows.append({"model": model, "task_type": t, "quality": q, "score": round(score, 1), "p50_ms": 1,
+                         "p95_ms": 1, "over_refusals": 0, "answers": 1, "spread": 0})
+    board = scoring.leaderboard(rows, {"5": 90}, margin=2.0)
+    assert [b["model"] for b in board] == ["qwen38", "gemma4", "coder"]
+    v = scoring.verdict(board, 2.0)
+    assert v["kind"] == "speed" and board[0]["model"] in v["tied"]
