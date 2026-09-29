@@ -171,13 +171,26 @@ def best_by_type(star_rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     return best
 
 
-def recommend_config(star_rows: List[Dict[str, Any]]) -> Tuple[str, List[str]]:
+def recommend_config(star_rows: List[Dict[str, Any]], margin: float = 0.0,
+                     leader: Optional[str] = None) -> Tuple[str, List[str]]:
     """A model_catalog using only keys K9ModelRouter reads (provider,
     llm_ref, capabilities, default_model). Each capability on exactly one
-    entry, because K9ModelRouter gives ties to the first entry."""
+    entry, because K9ModelRouter gives ties to the first entry.
+
+    With ``leader`` (the leaderboard's top model), a task type stays on the
+    leader unless another model beats it on quality by more than ``margin``:
+    splitting a router across models for noise costs GPU swaps and memory
+    for nothing."""
     best = best_by_type(star_rows)
     if not best:
         return "", []
+    kept: Dict[str, Dict[str, Any]] = {}
+    if leader:
+        for t, b in list(best.items()):
+            mine = next((r for r in star_rows if r["model"] == leader and r["task_type"] == t), None)
+            if mine and b["model"] != leader and b["quality"] - mine["quality"] <= margin:
+                kept[t] = b
+                best[t] = {**mine, "tie_broken": False, "tied_with": []}
     by_model: Dict[str, List[str]] = defaultdict(list)
     for ttype in TASK_TYPES:
         if ttype in best:
@@ -206,6 +219,10 @@ def recommend_config(star_rows: List[Dict[str, Any]]) -> Tuple[str, List[str]]:
                          "model_catalog": {"default_model": "general", "models": catalog}}}
     def note(t: str) -> str:
         b = best[t]
+        if t in kept:
+            o = kept[t]
+            return (f"{t}: {b['model']} (quality {b['quality']}; {o['model']}'s {o['quality']} is within the "
+                    f"{margin:g}-point tie margin, so it stays on the overall leader)")
         if not b.get("tie_broken"):
             return f"{t}: {b['model']} (quality {b['quality']})"
         rivals = ", ".join(f"{r['model']} {r['score']}" for r in b["tied_with"])

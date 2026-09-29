@@ -81,9 +81,10 @@ class ConfigRecommenderAgent(ArenaAgent):
         match_id = payload["match_id"]
         scored = payload.get("scored", {})
         test = payload.get("router_test", {}) or {}
-        yaml_text, notes = scoring.recommend_config(scored.get("rows", []))
         board = scored.get("leaderboard", [])
         margin = float(self.config.get("arena", {}).get("scoring", {}).get("tie_margin", 2.0))
+        yaml_text, notes = scoring.recommend_config(scored.get("rows", []), margin=margin,
+                                                    leader=board[0]["model"] if board else None)
         how = scoring.verdict(board, margin)
         report = {
             "leaderboard": board,

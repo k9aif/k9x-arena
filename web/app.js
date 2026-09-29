@@ -227,7 +227,7 @@ app.addEventListener('click', async (ev) => {
   if (act === 'start') startMatch();
   if (act === 'rescore') {
     el.disabled = true; el.textContent = 'Running…';
-    try { await api(`/api/matches/${el.dataset.id}/rescore`, { method: 'POST' }); route(); } catch (e) { alert(e.message); el.disabled = false; el.textContent = 'Run the router test'; }
+    try { await api(`/api/matches/${el.dataset.id}/rescore`, { method: 'POST' }); route(); } catch (e) { alert(e.message); el.disabled = false; el.textContent = el.dataset.label || 'Run the router test'; }
   }
   if (act === 'celebrate' && S.lastReport) celebrate(S.lastReport.leaderboard, S.lastReport.judge, S.lastReport.verdict);
   if (act === 'close-celebration') closeCelebration();
@@ -476,7 +476,7 @@ async function renderResults(id) {
   app.innerHTML = header('results') + `<main class="page">
     <div class="row" style="align-items:flex-end"><div class="grow"><h1 class="display" style="margin:0;font-size:34px">Match #${id} · ${esc(m.suite_name)}</h1>
       <div class="muted" style="font-size:14px">${m.contenders.length} contenders · ${D.tasks.length} tasks · ${m.runs_per_task} runs · judge <span class="mono">${esc(m.judge)}</span> · ${dur(m.finished_at && m.started_at ? m.finished_at - m.started_at : 0)}</div></div>
-      ${R.leaderboard && R.leaderboard.length ? '<button class="btn" data-act="celebrate">Celebrate again</button>' : ''}<a class="btn" href="#/match/${id}">Replay view</a><a class="btn primary" href="#/lobby">Rematch</a></div>
+      ${R.leaderboard && R.leaderboard.length ? '<button class="btn" data-act="celebrate">Celebrate again</button>' : ''}${m.status === 'completed' ? `<button class="btn" data-act="rescore" data-id="${id}" data-label="Rerun report" title="Recompute stars, the router test and the config from the stored grades. No model is called.">Rerun report</button>` : ''}<a class="btn" href="#/match/${id}">Replay view</a><a class="btn primary" href="#/lobby">Rematch</a></div>
     ${J.checked && !J.reliable ? `<div class="banner info" style="margin-top:14px">The judge gave deliberately poor answers an average of ${J.planted_avg}, so its summary and chat grades don't separate the models reliably. Rank on code, extraction, reasoning and adversarial, or use a stricter judge (ARENA_JUDGE_MODEL / ARENA_JUDGE_MODEL_2).</div>` : ''}
     ${J.shared_family && J.shared_family.length ? `<div class="banner info" style="margin-top:14px">Fairness note: the judge shares a model family (${esc(J.shared_family.join(', '))}) with a contender, which can favour that contender's style.</div>` : ''}
     ${J.pending ? `<div class="banner info" style="margin-top:14px">${J.pending} judged answers await review, so these results are provisional. <a href="#/reviews">Review them</a>.</div>` : ''}
@@ -525,7 +525,7 @@ function routerPanel(RT, m) {
       <td class="display" style="font-size:16px;text-align:right;color:${hit ? 'var(--teal-2)' : 'var(--amber)'}">${r.learned_q == null ? '—' : r.learned_q.toFixed(0)}</td><td class="muted" style="font-size:12px">best ${r.best.toFixed(0)} · ${esc(r.best_models.map(short).join(', '))}</td></tr>`; }).join('');
   const captured = RT.headroom_captured;
   return `<section class="panel"><h2>Router test</h2>
-    <p class="muted" style="font-size:12.5px;margin:0 0 8px">Each task was hidden in turn. K9ModelRouter learned from the other ${RT.tasks - 1} tasks' scores, then picked a model for the hidden one; the pick is scored with that model's real result. No model was run again.</p>
+    <p class="muted" style="font-size:12.5px;margin:0 0 8px">Each task was hidden in turn. K9ModelRouter learned from the other ${RT.tasks - 1} tasks' scores, then picked a model for the hidden one; the pick is scored with that model's real result. No model was run again. Scores here are answer quality only; the stars also weigh speed and consistency.</p>
     <table class="grid"><thead><tr><th>Strategy</th><th></th><th style="text-align:right">Avg</th><th style="text-align:right" title="Tasks where it picked a top-scoring model">Best</th></tr></thead><tbody>
       ${line('Best possible', 'oracle', 'top contender on every task')}
       ${line('K9ModelRouter, learned', 'learned', `${RT.learned_decisions} of ${RT.tasks} picks overruled the rules`)}
@@ -540,7 +540,10 @@ function routerPanel(RT, m) {
 
 function verdictTile(R) {
   const v = R.verdict || { kind: 'clear' }; const w = R.winner || (R.leaderboard || [])[0] || {};
-  if (v.kind === 'draw') return `<div class="kpi gold"><div class="muted" style="font-size:13px">Result</div><div class="v"><span class="big" style="color:var(--amber)">Draw</span><span class="muted">tied on quality and score</span></div></div>`;
+  if (v.kind === 'draw') {
+    const lb = R.leaderboard || []; const pair = lb.slice(0, 2).map((b) => `${esc(short(b.model))} ${b.score.toFixed(1)}`).join(' vs ');
+    return `<div class="kpi gold"><div class="muted" style="font-size:13px">Result</div><div class="v"><span class="big" style="color:var(--amber)">Draw</span><span class="muted">within ${v.margin ?? 2} points</span></div><div class="muted" style="font-size:12px;margin-top:2px">${pair}</div></div>`;
+  }
   const sub = v.kind === 'speed' ? '<div class="muted" style="font-size:12px;margin-top:2px">Quality tied · decided on speed &amp; consistency</div>' : '';
   return `<div class="kpi gold"><div class="muted" style="font-size:13px">Winner</div><div class="v"><span class="mono" style="font-size:20px;color:var(--amber)">${esc(w.model || '—')}</span><span class="big">${w.score != null ? w.score.toFixed(1) : ''}</span></div>${sub}</div>`;
 }

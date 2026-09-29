@@ -532,3 +532,22 @@ def test_rescore_gives_an_old_match_its_router_test():
     rt = store.get_report(mid)["router_test"]
     assert rt["available"] and rt["strategies"]["learned"]["best_picks"] == 24
     assert store.get_match(mid)["status"] == "completed"
+
+
+def test_recommendation_stays_on_the_leader_within_the_tie_margin():
+    """Match #6: granite led summary by 0.5 and chat by 0.2 -- noise. Keep
+    everything on the leader (qwen) instead of splitting the router."""
+    q = {"code": (100, 100), "extraction": (100, 100), "reasoning": (100, 100),
+         "summarization": (99.5, 100.0), "chat": (98.9, 99.1), "adversarial": (100, 100)}
+    rows = []
+    for t, (qq, gq) in q.items():
+        rows.append({"model": "qwen", "task_type": t, "quality": qq, "score": 99.0})
+        rows.append({"model": "granite", "task_type": t, "quality": gq, "score": 97.0})
+    text, notes = scoring.recommend_config(rows, margin=2.0, leader="qwen")
+    doc = yaml.safe_load(text)
+    assert doc["inference"]["llm_factory"]["models"] == {"general": {"model": "qwen"}}
+    assert "within the 2-point tie margin" in next(n for n in notes if n.startswith("summarization"))
+    # a clear win still splits
+    rows = [dict(r, quality=80.0) if r["model"] == "qwen" and r["task_type"] == "code" else r for r in rows]
+    doc = yaml.safe_load(scoring.recommend_config(rows, margin=2.0, leader="qwen")[0])
+    assert {"model": "granite"} in doc["inference"]["llm_factory"]["models"].values()
