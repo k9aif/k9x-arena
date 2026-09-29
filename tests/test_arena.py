@@ -566,3 +566,47 @@ def test_fast_but_wrong_model_cannot_win():
     assert [b["model"] for b in board] == ["qwen38", "gemma4", "coder"]
     v = scoring.verdict(board, 2.0)
     assert v["kind"] == "speed" and board[0]["model"] in v["tied"]
+
+
+def _two_model_runs(lat_a, lat_b, q=100):
+    tasks = [{"id": "C1", "type": "code"}]
+    runs, grades = [], []
+    for rid, (model, lat) in enumerate((("a", lat_a), ("b", lat_b)), start=1):
+        runs.append({"id": rid, "mode": "forced", "model": model, "task_id": "C1", "run_no": 1,
+                     "latency_ms": lat, "refused": 0, "error": None})
+        grades.append({"run_id": rid, "grader": "code", "score": q})
+    return tasks, runs, scoring.final_run_scores(runs, grades, [])
+
+
+def test_sub_second_answers_get_full_latency_marks():
+    """Match #6: 214 ms vs 527 ms cost granite 59 latency points. Both are instant."""
+    tasks, runs, scores = _two_model_runs(214, 527)
+    rows = {r["model"]: r for r in scoring.compute_stars(tasks, runs, scores, {}, {"5": 90}, latency_floor_ms=1000)}
+    assert rows["a"]["latency"] == rows["b"]["latency"] == 100.0
+    assert rows["a"]["score"] == rows["b"]["score"]
+    tasks, runs, scores = _two_model_runs(500, 2000)       # beyond the floor: 1000/2000
+    rows = {r["model"]: r for r in scoring.compute_stars(tasks, runs, scores, {}, {"5": 90}, latency_floor_ms=1000)}
+    assert rows["a"]["latency"] == 100.0 and rows["b"]["latency"] == 50.0
+
+
+def test_latency_left_out_when_a_model_ran_on_cpu():
+    tasks, runs, scores = _two_model_runs(300, 1700)
+    rows = {r["model"]: r for r in scoring.compute_stars(tasks, runs, scores, {}, {"5": 90},
+                                                         latency_floor_ms=1000, score_latency=False)}
+    assert rows["a"]["latency"] is None and rows["a"]["score"] == rows["b"]["score"] == 100.0
+
+
+def test_scoring_agent_flags_offloaded_contender(monkeypatch):
+    from arena import store
+    from arena.agents.report_agents import ScoringAgent
+    from arena.settings import load_config
+    mid = store.create_match("built-in:x", "X", ["a", "b"], "j:1", 1, False, {})
+    store.save_tasks(mid, [{"id": "C1", "type": "code", "title": "t", "prompt": "p"}])
+    for model, lat in (("a", 300), ("b", 1700)):
+        rid = store.save_run(mid, "forced", model, "x", "C1", 1, "out", lat, False, None)
+        store.save_grade(rid, "code", 100)
+    store.merge_settings(mid, gpu={"a": {"min_share": 1.0, "samples": 3}, "b": {"min_share": 0.7, "samples": 3}})
+    out = ScoringAgent(config=load_config()).execute({"match_id": mid})
+    assert out["fairness"]["latency_scored"] is False
+    assert out["fairness"]["offloaded"] == [{"model": "b", "cpu_pct": 30}]
+    assert {r["score"] for r in out["rows"]} == {100.0}

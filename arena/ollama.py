@@ -50,6 +50,24 @@ def loaded_models(timeout: float = 5.0) -> List[str]:
         return []
 
 
+def gpu_share(tag: str, timeout: float = 3.0):
+    """Share of a loaded model's memory that sits in GPU VRAM (0..1), from
+    Ollama's /api/ps. Below 1.0 means Ollama put part of the model on the
+    CPU (usually because other models hold VRAM), which makes it slower
+    for reasons that have nothing to do with the model. None if the model
+    isn't loaded or Ollama can't be asked."""
+    try:
+        resp = requests.get(f"{ollama_base_url()}/api/ps", timeout=timeout)
+        resp.raise_for_status()
+        for m in resp.json().get("models", []):
+            if tag in (m.get("name"), m.get("model")):
+                size, vram = float(m.get("size") or 0), float(m.get("size_vram") or 0)
+                return round(vram / size, 3) if size else None
+    except Exception:
+        return None
+    return None
+
+
 def reachable(timeout: float = 3.0) -> bool:
     try:
         requests.get(f"{ollama_base_url()}/api/tags", timeout=timeout).raise_for_status()

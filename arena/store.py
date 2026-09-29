@@ -202,6 +202,17 @@ def update_match(match_id: int, **fields) -> None:
         c.execute(f"UPDATE matches SET {keys} WHERE id=?", (*fields.values(), match_id))
 
 
+def merge_settings(match_id: int, **values) -> None:
+    """Merge keys into a match's settings JSON."""
+    with conn() as c:
+        r = c.execute("SELECT settings FROM matches WHERE id=?", (match_id,)).fetchone()
+        if not r:
+            return
+        settings = json.loads(r[0] or "{}")
+        settings.update(values)
+        c.execute("UPDATE matches SET settings=? WHERE id=?", (json.dumps(settings), match_id))
+
+
 def delete_match(match_id: int) -> None:
     with conn() as c:
         run_ids = [r["id"] for r in c.execute("SELECT id FROM runs WHERE match_id=?", (match_id,))]

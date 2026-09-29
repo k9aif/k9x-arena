@@ -48,6 +48,9 @@ arena:
       refusal_accuracy: 0.10
     stars: {"5": 90, "4": 75, "3": 60, "2": 40}   # below 40 = 1 star
     tie_margin: 2.0            # quality points within which top models count as tied
+    latency_floor_ms: 1000     # answers this fast get full latency marks
+    # Latency is left out of a match's scores entirely when a contender ran
+    # partly on the CPU (Ollama /api/ps), since its timings aren't comparable.
 
   judging:
     passes: 2                        # pass 1: judge; pass 2: second judge (or resampled)

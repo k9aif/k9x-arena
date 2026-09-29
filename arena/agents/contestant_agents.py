@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from arena import graders, live, store
+from arena import graders, live, ollama, store
 from arena.agents.common import ArenaAgent, contestant_prompt
 from arena.graders import is_refusal
 
@@ -53,8 +53,13 @@ class ForcedRunAgent(ArenaAgent):
         total = len(match["contenders"]) * len(tasks) * runs
         done = len(store.get_runs(match_id, "forced"))
         previous_model = None
+        gpu = dict((match.get("settings") or {}).get("gpu") or {})
         for i, model in enumerate(match["contenders"]):
             alias = alias_for(i)
+            pending = any(not store.run_exists(match_id, "forced", model, t["id"], r)
+                          for r in range(1, runs + 1) for t in tasks)
+            if pending:
+                self._warm_up(model, alias)
             for run_no in range(1, runs + 1):
                 for task in tasks:
                     live.checkpoint()
@@ -79,6 +84,7 @@ class ForcedRunAgent(ArenaAgent):
                                             output, latency, is_refusal(output), error)
                     if not error and task["type"] in _INSTANT:
                         grade_now(run_id, task, output, timeout)
+                    self._sample_gpu(match_id, gpu, model)
                     done += 1
                     live.set_progress("answering", done, total)
                     live.emit("Answer" if not error else "Error",
@@ -86,3 +92,25 @@ class ForcedRunAgent(ArenaAgent):
                               + (f"{latency / 1000:.1f} s" if not error else error[:120]))
         live.set_current(None)
         return {"answers": done, "total": total}
+
+    def _warm_up(self, model: str, alias: str) -> None:
+        """One untimed call so loading the model never counts as its latency."""
+        live.set_current({"model": model, "task_id": "warm-up", "title": "loading the model", "type": "", "run_no": 0})
+        try:
+            self.ask("Reply with the single word: ready", task_type=alias)
+            live.emit("GPU", f"warm-up · {model} loaded")
+        except RuntimeError as exc:
+            live.emit("Error", f"warm-up failed for {model}: {str(exc)[:120]}")
+
+    @staticmethod
+    def _sample_gpu(match_id: int, gpu: Dict[str, Any], model: str) -> None:
+        """Track the lowest share of the model that was in VRAM during its turn."""
+        share = ollama.gpu_share(model)
+        if share is None:
+            return
+        cur = gpu.get(model) or {"min_share": 1.0, "samples": 0}
+        low = min(cur["min_share"], share)
+        if share < 0.95 and cur["min_share"] >= 0.95:
+            live.emit("GPU", f"{model} is running {round(100 * (1 - share))}% on CPU; its latency won't be scored")
+        gpu[model] = {"min_share": low, "samples": cur["samples"] + 1}
+        store.merge_settings(match_id, gpu=gpu)

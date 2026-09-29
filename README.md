@@ -113,6 +113,19 @@ pip install -r requirements-dev.txt
 pytest tests -q
 ```
 
+## Fair timing
+
+- Each contender gets one untimed warm-up call before its turn, so model
+  loading never counts as latency.
+- Answers under 1 s (`arena.scoring.latency_floor_ms`) get full speed marks.
+- During each turn the arena asks Ollama (`/api/ps`) how much of the model is
+  in GPU memory. If a contender ran partly on the CPU because other models
+  held VRAM, its timings aren't comparable: latency is left out of that
+  match's scores, and Results says so.
+- Results show answer quality next to every overall score, with an
+  Overall / Answer quality toggle; "Best" and the winner follow quality
+  first, with speed only breaking ties.
+
 ## Status and limits
 
 - One match at a time (one GPU). Matches can be paused and resumed.

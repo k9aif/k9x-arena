@@ -273,3 +273,4 @@ pre.yaml { white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: hidden; }
 .phasestrip .ps.now { border-color: var(--teal); color: var(--teal-2); }
 .phasestrip .ps.done { color: var(--teal-2); border-color: var(--line-teal); }
 .hud.right { max-width: calc(100vw - 80px); }
+.seg { display: flex; gap: 6px; }

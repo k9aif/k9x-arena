@@ -229,6 +229,7 @@ app.addEventListener('click', async (ev) => {
     el.disabled = true; el.textContent = 'Running…';
     try { await api(`/api/matches/${el.dataset.id}/rescore`, { method: 'POST' }); route(); } catch (e) { alert(e.message); el.disabled = false; el.textContent = el.dataset.label || 'Run the router test'; }
   }
+  if (act === 'grid') { S.gridMode = el.dataset.mode; route(); return; }
   if (act === 'celebrate' && S.lastReport) celebrate(S.lastReport.leaderboard, S.lastReport.judge, S.lastReport.verdict);
   if (act === 'close-celebration') closeCelebration();
   if (act === 'showall' || act === 'showtop') { S.showAllModels = act === 'showall'; renderLobby(); }
@@ -453,14 +454,22 @@ async function renderResults(id) {
   }
   const types = D.task_types.filter((t) => D.stars.some((s) => s.task_type === t));
   const models = R.leaderboard.map((b) => b.model);
-  // "Best" follows the number shown in the cell (the weighted score); ties all get the badge.
-  const best = {}; D.stars.forEach((s) => { const b = best[s.task_type]; if (!b || s.score > b.score) best[s.task_type] = s; });
-  const isTop = (s) => best[s.task_type] && s.score === best[s.task_type].score;
+  // "Best" is answer quality first (within the tie margin), then the overall score.
+  const margin = (R.verdict && R.verdict.margin) || 2; const F = R.fairness || {};
+  const best = {}; D.stars.forEach((s) => { const b = best[s.task_type];
+    if (!b || s.quality > b.quality + margin || (Math.abs(s.quality - b.quality) <= margin && s.score > b.score)) best[s.task_type] = s; });
+  const isTop = (s) => { const b = best[s.task_type]; return b && Math.abs(s.quality - b.quality) <= margin && s.score === b.score; };
+  const byQuality = S.gridMode === 'quality';
+  const topQ = {}; D.stars.forEach((s) => { topQ[s.task_type] = Math.max(topQ[s.task_type] ?? -1, Math.round(s.quality)); });
+  const qStars = (q) => (q >= 90 ? 5 : q >= 75 ? 4 : q >= 60 ? 3 : q >= 40 ? 2 : 1);
   const cell = (mdl, t) => { const s = D.stars.find((x) => x.model === mdl && x.task_type === t); if (!s) return '<td class="muted">—</td>';
-    const isBest = isTop(s);
-    return `<td><div class="cell ${isBest ? 'best' : ''}"><span class="stars" aria-label="${s.stars} of 5 stars">${starText(s.stars)}</span><span class="row" style="gap:6px"><span class="n">${s.score.toFixed(0)}</span>${isBest ? '<span class="bestbadge">Best</span>' : ''}</span></div></td>`; };
+    const isBest = byQuality ? Math.round(s.quality) === topQ[t] : isTop(s); const main = byQuality ? s.quality : s.score; const st = byQuality ? qStars(s.quality) : s.stars;
+    const slow = s.latency != null && s.latency < 60;
+    const sub = byQuality ? `overall ${s.score.toFixed(0)}` : `answers ${s.quality.toFixed(0)}${slow ? ' · <span style="color:var(--amber)">slow</span>' : ''}`;
+    return `<td><div class="cell ${isBest ? 'best' : ''}"><span class="stars" aria-label="${st} of 5 stars">${starText(st)}</span><span class="row" style="gap:6px"><span class="n">${main.toFixed(0)}</span>${isBest ? '<span class="bestbadge">Best</span>' : ''}</span><span class="muted" style="font-size:11.5px">${sub}</span></div></td>`; };
+  const gridToggle = `<div class="seg" role="group" aria-label="Grid shows"><button class="btn small ${byQuality ? '' : 'primary'}" data-act="grid" data-mode="overall">Overall</button><button class="btn small ${byQuality ? 'primary' : ''}" data-act="grid" data-mode="quality">Answer quality</button></div>`;
   const grid = `<table class="grid"><thead><tr><th>Model</th>${types.map((t) => `<th>${TYPE_LABEL[t]}</th>`).join('')}</tr></thead><tbody>${models.map((mdl) => `<tr><td class="mono">${esc(mdl)}</td>${types.map((t) => cell(mdl, t)).join('')}</tr>`).join('')}</tbody></table>`;
-  const board = R.leaderboard.map((b) => `<tr><td class="rank r${b.rank}">${b.rank}</td><td class="mono">${esc(b.model)}</td><td class="display" style="font-size:20px">${b.score.toFixed(1)}</td><td class="stars">${starText(b.stars)}</td><td>${secs(b.p50_ms)} / ${secs(b.p95_ms)}</td><td>${b.over_refusals} of ${b.answers}</td><td>± ${b.spread}</td></tr>`).join('');
+  const board = R.leaderboard.map((b) => `<tr><td class="rank r${b.rank}">${b.rank}</td><td class="mono">${esc(b.model)}</td><td class="display" style="font-size:20px">${b.score.toFixed(1)}</td><td class="display" style="font-size:18px;color:var(--text-2)">${b.quality != null ? b.quality.toFixed(1) : '—'}</td><td class="stars">${starText(b.stars)}</td><td>${secs(b.p50_ms)} / ${secs(b.p95_ms)}</td><td>${b.over_refusals} of ${b.answers}</td><td>± ${b.spread}</td></tr>`).join('');
   const audit = D.audit.map((a) => { const ok = a.verdict === 'match'; const na = a.verdict === 'not_in_match';
     return `<tr><td>${TYPE_LABEL[a.task_type] || esc(a.task_type)}</td><td class="mono" style="font-size:12px">${esc(short(a.router_model))} (${esc(a.router_alias)}) → best ${esc(short(a.best_model))}</td>
       <td>${na ? '<span class="badge grey" title="The router chose a model that is not competing in this match, so its answer quality is unknown.">Router\'s model not in match</span>' : ok ? '<span class="badge teal">Match</span>' : '<span class="badge amber">Mismatch</span>'}</td>
@@ -478,6 +487,7 @@ async function renderResults(id) {
       <div class="muted" style="font-size:14px">${m.contenders.length} contenders · ${D.tasks.length} tasks · ${m.runs_per_task} runs · judge <span class="mono">${esc(m.judge)}</span> · ${dur(m.finished_at && m.started_at ? m.finished_at - m.started_at : 0)}</div></div>
       ${R.leaderboard && R.leaderboard.length ? '<button class="btn" data-act="celebrate">Celebrate again</button>' : ''}${m.status === 'completed' ? `<button class="btn" data-act="rescore" data-id="${id}" data-label="Rerun report" title="Recompute stars, the router test and the config from the stored grades. No model is called.">Rerun report</button>` : ''}<a class="btn" href="#/match/${id}">Replay view</a><a class="btn primary" href="#/lobby">Rematch</a></div>
     ${J.checked && !J.reliable ? `<div class="banner info" style="margin-top:14px">The judge gave deliberately poor answers an average of ${J.planted_avg}, so its summary and chat grades don't separate the models reliably. Rank on code, extraction, reasoning and adversarial, or use a stricter judge (ARENA_JUDGE_MODEL / ARENA_JUDGE_MODEL_2).</div>` : ''}
+    ${F.offloaded && F.offloaded.length ? `<div class="banner info" style="margin-top:14px">${F.offloaded.map((o) => `<span class="mono">${esc(o.model)}</span> ran ${o.cpu_pct}% on the CPU during its turn`).join('; ')}: other models were holding GPU memory. Timings aren't comparable, so latency is left out of this match's scores.</div>` : ''}
     ${J.shared_family && J.shared_family.length ? `<div class="banner info" style="margin-top:14px">Fairness note: the judge shares a model family (${esc(J.shared_family.join(', '))}) with a contender, which can favour that contender's style.</div>` : ''}
     ${J.pending ? `<div class="banner info" style="margin-top:14px">${J.pending} judged answers await review, so these results are provisional. <a href="#/reviews">Review them</a>.</div>` : ''}
     <section class="kpis" aria-label="Summary">
@@ -488,8 +498,8 @@ ${routerKpis(RT, R.router)}
     </section>
     <div class="results">
       <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
-        <section class="panel"><h2>Stars by task type</h2>${grid}<p class="muted" style="font-size:12px;margin:10px 0 0">Code, extraction and reasoning graded against right answers; summary and chat by two anonymized judge passes; adversarial by refusal behaviour, leaks and Granite Guardian's verdict.</p></section>
-        <section class="panel"><h2>Leaderboard</h2><table class="grid"><thead><tr><th>#</th><th>Model</th><th>Score</th><th>Stars</th><th>Latency p50 / p95</th><th>Over-refusals</th><th>Run-to-run spread</th></tr></thead><tbody>${board}</tbody></table></section>
+        <section class="panel"><div class="row"><h2 class="grow" style="margin:0">Stars by task type</h2>${gridToggle}</div><div style="margin-top:10px">${grid}</div><p class="muted" style="font-size:12px;margin:10px 0 0">${byQuality ? 'Answer quality only: is the answer right and good?' : `Overall = answer quality 60%, consistency 15%, ${F.latency_scored === false ? 'latency (left out this match), ' : `speed 15% (answers under ${((F.latency_floor_ms || 1000) / 1000).toFixed(0)} s get full marks), `}refusals 10%. The small line shows answer quality.`} Code, extraction and reasoning graded against right answers; summary and chat by two anonymized judge passes; adversarial by refusal behaviour, leaks and Granite Guardian's verdict.</p></section>
+        <section class="panel"><h2>Leaderboard</h2><table class="grid"><thead><tr><th>#</th><th>Model</th><th>Score</th><th title="Answer quality only">Quality</th><th>Stars</th><th>Latency p50 / p95</th><th>Over-refusals</th><th>Run-to-run spread</th></tr></thead><tbody>${board}</tbody></table></section>
         <section class="panel"><h2>Tasks</h2><table class="grid"><thead><tr><th>Task</th><th>Type</th><th>Title</th>${models.map((mdl) => `<th class="mono" style="text-transform:none">${esc(short(mdl))}</th>`).join('')}</tr></thead><tbody>${tasks}</tbody></table></section>
       </div>
       <div style="display:flex;flex-direction:column;gap:16px;min-width:0">

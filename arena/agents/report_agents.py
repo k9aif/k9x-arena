@@ -26,19 +26,27 @@ class ScoringAgent(ArenaAgent):
         tasks = store.get_tasks(match_id)
         runs = store.get_runs(match_id)
         scores = scoring.final_run_scores(runs, store.get_grades(match_id), store.list_reviews(match_id))
-        weights = self.config.get("arena", {}).get("scoring", {}).get("weights", {})
-        rows = scoring.compute_stars(tasks, runs, scores, weights, _thresholds(self.config))
+        sc = self.config.get("arena", {}).get("scoring", {})
+        weights = sc.get("weights", {})
+        match = store.get_match(match_id)
+        gpu = (match.get("settings") or {}).get("gpu") or {}
+        offloaded = sorted(m for m, g in gpu.items() if m in match["contenders"] and g.get("min_share", 1) < 0.95)
+        floor = int(sc.get("latency_floor_ms", 1000))
+        rows = scoring.compute_stars(tasks, runs, scores, weights, _thresholds(self.config),
+                                     latency_floor_ms=floor, score_latency=not offloaded)
         store.save_stars(match_id, rows)
         margin = float(self.config.get("arena", {}).get("scoring", {}).get("tie_margin", 2.0))
         board = scoring.leaderboard(rows, _thresholds(self.config), margin)
         judged = [s for s in scores.values() if s["source"] in ("judge", "review")]
         reviews = store.list_reviews(match_id)
-        match = store.get_match(match_id)
         families = (match.get("settings") or {}).get("families", {})
         judges = [match["judge"]] + ([match["settings"].get("judge_2")] if match["settings"].get("judge_2") else [])
         shared = sorted({families.get(c) for c in match["contenders"]}
                         & {families.get(j) for j in judges} - {None, ""})
-        return {"rows": rows, "leaderboard": board,
+        fairness = {"latency_floor_ms": floor, "latency_scored": not offloaded,
+                    "offloaded": [{"model": m, "cpu_pct": round(100 * (1 - gpu[m]["min_share"]))} for m in offloaded],
+                    "gpu_checked": bool(gpu)}
+        return {"rows": rows, "leaderboard": board, "fairness": fairness,
                 "judge": {"judged": len(judged), "disagreements": len(reviews),
                           "pending": sum(1 for r in reviews if r["status"] == "pending"),
                           "second_judge": match["settings"].get("judge_2") or None,
@@ -92,6 +100,7 @@ class ConfigRecommenderAgent(ArenaAgent):
             "winner": board[0] if board and how["kind"] != "draw" else None,
             "verdict": {**how, "margin": margin},
             "judge": scored.get("judge", {}),
+            "fairness": scored.get("fairness", {}),
             "router_test": test,
             "recommended_yaml": yaml_text,
             "recommended_notes": notes,
