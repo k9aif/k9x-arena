@@ -36,6 +36,9 @@ docs/architecture.puml
   contender via its unique capability (`contestant_<n>`); the judge uses
   `judge`; router mode sends the real task type. Never call LLMFactory or the
   router directly.
+- **Screen each prompt once** (`arena/screening.py`): built-in suites are trusted (no
+  Guardian at match time); uploads are scanned per task at upload and cached;
+  cache misses are scanned on first use.
 - **Granite Guardian is mandatory and fails closed** — `settings.load_config()`
   forces it on; uploads and match starts are refused when it's offline.
 - **Batch GPU work by phase** (screen → answer by model → router → grade →

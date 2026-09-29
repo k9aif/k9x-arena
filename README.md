@@ -92,7 +92,13 @@ If the pre-flight fails, the container stops and the log says why.
 
 Upload a task suite (`.yaml`, same format as `suites/`) or a source document
 (`.md`, `.txt`) that becomes summary and question tasks. Every upload is
-pre-checked, then scanned by Granite Guardian before it's accepted.
+pre-checked, then Granite Guardian scans each task prompt once, at upload;
+matches reuse those verdicts. A normal task that Guardian flags gets the upload
+rejected (adversarial tasks are expected to be flagged).
+
+Built-in suites in `suites/` ship with the arena and are trusted: they are not
+Guardian-scanned at match time (k9x_Shield still checks every contender call).
+If you edit them locally, that is your own review.
 
 ## Tests
 

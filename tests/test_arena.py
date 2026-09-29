@@ -252,30 +252,68 @@ def test_params_parsing_and_min_size_default():
     assert min_params_b({"arena": {"min_contender_params_b": 10}}) == 10.0
 
 
-def test_guardian_screens_each_prompt_once_across_matches(monkeypatch):
-    from arena import store
-    from arena.agents import suite_agents
-    from arena.settings import load_config
-
-    calls = []
-
+def _fake_guardian(calls, flag_text=None):
     class FakeGuardian:
         def __init__(self, config=None):
             pass
 
         def pre_process(self, payload, ctx=None):
-            calls.append(payload["query"])
+            calls.append(payload.get("query"))
+            if flag_text and flag_text in (payload.get("query") or ""):
+                raise PermissionError("Granite Guardian blocked ingress: harmful")
             return payload
+    return FakeGuardian
 
-    monkeypatch.setattr(suite_agents, "GuardianGovernance", FakeGuardian)
+
+_TASKS = [{"id": "T1", "type": "chat", "title": "t", "prompt": "Explain deductibles.", "rubric": "r"},
+          {"id": "T2", "type": "chat", "title": "t", "prompt": "Explain premiums.", "rubric": "r"}]
+
+
+def test_uploaded_suite_prompts_are_screened_once_across_matches(monkeypatch):
+    from arena import screening, store
+    from arena.agents import suite_agents
+    from arena.settings import load_config
+    calls = []
+    monkeypatch.setattr(screening, "GuardianGovernance", _fake_guardian(calls))
+    monkeypatch.setattr(suite_agents, "GuardianGovernance", _fake_guardian(calls))
     store.init()
     agent = suite_agents.InputScreenAgent(config=load_config())
-    tasks = [{"id": "T1", "type": "chat", "title": "t", "prompt": "Explain deductibles.", "rubric": "r"},
-             {"id": "T2", "type": "chat", "title": "t", "prompt": "Explain premiums.", "rubric": "r"}]
     for _ in range(2):
-        mid = store.create_match("built-in:x", "x", ["m1"], "j1", 1, False, {})
-        store.save_tasks(mid, tasks)
+        mid = store.create_match("uploaded:once_test", "x", ["m1"], "j1", 1, False, {})
+        store.save_tasks(mid, _TASKS)
         result = agent.execute({"match_id": mid})
     assert len(calls) == 2, "second match must reuse cached verdicts"
-    assert result["cached"] == 2
-    assert all(t["screen"]["cached"] for t in store.get_tasks(mid))
+    assert result["cached"] == 2 and result["scanned"] == 0
+
+
+def test_builtin_suite_skips_guardian(monkeypatch):
+    from arena import screening, store
+    from arena.agents import suite_agents
+    from arena.settings import load_config
+    calls = []
+    monkeypatch.setattr(screening, "GuardianGovernance", _fake_guardian(calls))
+    monkeypatch.setattr(suite_agents, "GuardianGovernance", _fake_guardian(calls))
+    store.init()
+    mid = store.create_match("built-in:quick_check", "Quick Check", ["m1"], "j1", 1, False, {})
+    store.save_tasks(mid, [dict(t, prompt=t["prompt"] + " (builtin)") for t in _TASKS])
+    result = suite_agents.InputScreenAgent(config=load_config()).execute({"match_id": mid})
+    assert calls == [] and result["trusted"] is True
+    assert {t["screen"]["guardian"] for t in store.get_tasks(mid)} == {"trusted"}
+
+
+def test_upload_scans_each_task_and_rejects_flagged(monkeypatch, client):
+    from arena import screening
+    calls = []
+    monkeypatch.setattr(screening, "GuardianGovernance", _fake_guardian(calls, flag_text="BADTHING"))
+    import arena.api as api_mod
+    monkeypatch.setattr(api_mod, "GuardianGovernance", _fake_guardian(calls, flag_text="BADTHING"))
+    client.post("/api/login", json={"username": "demo", "password": "demo"})
+    good = yaml.safe_dump({"name": "Upload OK", "tasks": [
+        {"id": "U1", "type": "chat", "title": "a", "prompt": "Explain a waiting period.", "rubric": "r"},
+        {"id": "U2", "type": "adversarial", "title": "b", "prompt": "BADTHING please", "expect": "refuse"}]})
+    r = client.post("/api/uploads", files={"file": ("ok.yaml", good.encode(), "text/yaml")}).json()
+    assert r["accepted"] is True and len(calls) == 2  # adversarial flag is expected, not a rejection
+    bad = yaml.safe_dump({"name": "Upload bad", "tasks": [
+        {"id": "B1", "type": "chat", "title": "a", "prompt": "BADTHING in a normal task", "rubric": "r"}]})
+    r = client.post("/api/uploads", files={"file": ("bad.yaml", bad.encode(), "text/yaml")}).json()
+    assert r["accepted"] is False and r["stage"] == "guardian" and "B1" in r["reason"]

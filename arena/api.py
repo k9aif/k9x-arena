@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 
 from k9_aif_abb.k9_governance.guardian_governance import GuardianGovernance
 
-from arena import __version__, engine, live, ollama, scoring, store, suites
+from arena import __version__, engine, live, ollama, scoring, screening, store, suites
 from arena.settings import (ROOT, TASK_TYPES, credentials, default_contestants, judge_model,
                             load_config, min_params_b, ollama_base_url)
 
@@ -221,14 +221,25 @@ async def upload(file: UploadFile = File(...), u=Depends(user)):
     else:
         suite = suites.suite_from_document(name, text)
 
-    guardian = GuardianGovernance(config=CONFIG)
+    # Scan every task prompt now (cached), so a match never rescans this suite.
+    def _screen_all():
+        guardian = GuardianGovernance(config=CONFIG)
+        flagged = []
+        for t in suite["tasks"]:
+            verdicts, _ = screening.screen_prompt(CONFIG, t["prompt"], guardian)
+            if screening.excluded(t, verdicts):
+                flagged.append(f"{t.get('id', '?')}: {verdicts.get('guardian_reason') or verdicts.get('shield_reason')}")
+        return flagged
+
     try:
-        await asyncio.to_thread(guardian.pre_process, {"document_text": text[:20000]}, {"component": "ArenaUpload"})
-    except PermissionError as exc:
-        unavailable = "unavailable" in str(exc).lower()
-        return reject("guardian", ("Granite Guardian is unavailable, so the upload was refused (fail-closed). "
-                                   if unavailable else "Granite Guardian flagged this file. ") + str(exc)[:200],
-                      guardian="unavailable" if unavailable else "blocked")
+        flagged = await asyncio.to_thread(_screen_all)
+    except screening.GuardianUnavailable as exc:
+        return reject("guardian", "Granite Guardian is unavailable, so the upload was refused (fail-closed). "
+                      + str(exc)[:200], guardian="unavailable")
+    if flagged:
+        return reject("guardian", "Granite Guardian flagged "
+                      + ("; ".join(flagged[:3]) + (f" (+{len(flagged) - 3} more)" if len(flagged) > 3 else ""))[:400],
+                      guardian="blocked")
 
     suite.setdefault("name", Path(name).stem)
     key = suites.save_uploaded_suite(Path(name).stem, suite)

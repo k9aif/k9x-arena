@@ -1,23 +1,21 @@
 # SPDX-License-Identifier: Apache-2.0
 # K9-AIF Framework
-"""SuiteSquad agents: load the task suite, then screen every task prompt
-with k9x_Shield and Granite Guardian before any contender sees it.
+"""SuiteSquad agents: load the task suite, then screen it before any
+contender sees it.
 
-Guardian is mandatory and fails closed: if it is unreachable the match
-stops. Each prompt is screened ONCE per Guardian model: verdicts are cached
-by sha256(model + prompt), so later matches with the same suite reuse them
-and only new or edited prompts are scanned. Adversarial tasks are EXPECTED
-to be flagged — their verdicts are recorded, not used to drop them. Any
-other task Guardian flags is excluded."""
+Screening happens once per prompt (see arena/screening.py): built-in suites
+are trusted and skip Granite Guardian; uploaded suites were scanned task by
+task at upload and reuse those cached verdicts; any prompt without a verdict
+is scanned now. Guardian is mandatory and fails closed. Adversarial tasks
+are EXPECTED to be flagged; any other flagged task is excluded."""
 
 from __future__ import annotations
 
-import hashlib
 from typing import Any, Dict
 
 from k9_aif_abb.k9_governance.guardian_governance import GuardianGovernance
 
-from arena import live, store
+from arena import live, screening, store
 from arena.agents.common import ArenaAgent
 from arena.suites import load_suite
 
@@ -42,49 +40,40 @@ class InputScreenAgent(ArenaAgent):
 
     def execute(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         match_id = payload["match_id"]
+        match = store.get_match(match_id)
         store.update_match(match_id, phase="screening")
-        guardian = GuardianGovernance(config=self.config)
-        model = self.config.get("governance", {}).get("guardian", {}).get("model", "")
+        builtin = str(match["suite"]).startswith("built-in:")
+        guardian = None if builtin else GuardianGovernance(config=self.config)
+        shield = self.governance  # ShieldGovernance, wired by ArenaAgent
         tasks = store.get_tasks(match_id)
-        excluded = cached = 0
+        excluded = cached = scanned = 0
         for i, task in enumerate(tasks, start=1):
             live.checkpoint()
             live.set_progress("screening", i - 1, len(tasks))
             if task.get("screen"):
                 excluded += int(task["screen"].get("excluded", False))
                 continue
-            adversarial = task["type"] == "adversarial"
-            key = hashlib.sha256(f"{model}\n{task['prompt']}".encode()).hexdigest()
-            verdicts = store.get_cached_screen(key)
-            hit = verdicts is not None
-            if hit:
-                cached += 1
+            if builtin:
+                verdicts, hit = screening.trusted_verdicts(self.config, task["prompt"], shield), False
             else:
-                shield_reason = self.shield_ingress(task["prompt"])
                 try:
-                    guardian.pre_process({"query": task["prompt"]}, {"component": self.__class__.__name__})
-                    guardian_verdict, guardian_reason = "safe", ""
-                except PermissionError as exc:
-                    if "unavailable" in str(exc).lower():
-                        raise PermissionError(
-                            "Granite Guardian is unavailable, and the arena never runs unscreened. "
-                            f"Check the Guardian model on the Ollama host. ({exc})") from exc
-                    guardian_verdict, guardian_reason = "flagged", str(exc)
-                verdicts = {"shield": "blocked" if shield_reason else "pass", "shield_reason": shield_reason,
-                            "guardian": guardian_verdict, "guardian_reason": guardian_reason}
-                store.put_cached_screen(key, verdicts)
-            shield_reason = verdicts.get("shield_reason")
-            guardian_verdict, guardian_reason = verdicts["guardian"], verdicts.get("guardian_reason", "")
-            exclude = (guardian_verdict == "flagged" or shield_reason is not None) and not adversarial
-            screen = {**verdicts, "excluded": exclude, "cached": hit}
-            store.set_task_screen(match_id, task["id"], screen)
+                    verdicts, hit = screening.screen_prompt(self.config, task["prompt"], guardian, shield)
+                except screening.GuardianUnavailable as exc:
+                    raise PermissionError(str(exc)) from exc
+                cached += int(hit)
+                scanned += int(not hit)
+            exclude = screening.excluded(task, verdicts)
+            store.set_task_screen(match_id, task["id"], {**verdicts, "excluded": exclude, "cached": hit})
             excluded += int(exclude)
             if exclude:
-                live.emit("Guardian", f"{task['id']} excluded · {guardian_reason or shield_reason}")
-            elif adversarial and (shield_reason or guardian_verdict == "flagged"):
+                live.emit("Guardian", f"{task['id']} excluded · {verdicts.get('guardian_reason') or verdicts.get('shield_reason')}")
+            elif task["type"] == "adversarial" and (verdicts.get("shield_reason") or verdicts["guardian"] == "flagged"):
                 live.emit("Shield", f"{task['id']} flagged as expected (adversarial task)")
         live.set_progress("screening", len(tasks), len(tasks))
-        if cached:
-            live.emit("Guardian", f"{cached} of {len(tasks)} prompts already screened (cached)"
-                      + (f"; {len(tasks) - cached} new" if cached < len(tasks) else ""))
-        return {"screened": len(tasks), "cached": cached, "excluded": excluded}
+        if builtin:
+            live.emit("Guardian", f"built-in suite · trusted, no Guardian scan ({len(tasks)} prompts; Shield still checks each call)")
+        elif cached:
+            live.emit("Guardian", f"{cached} of {len(tasks)} prompts already screened"
+                      + (f"; {scanned} scanned now" if scanned else ""))
+        return {"screened": len(tasks), "cached": cached, "scanned": scanned, "excluded": excluded,
+                "trusted": builtin}
