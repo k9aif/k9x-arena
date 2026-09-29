@@ -4,4 +4,6 @@ __pycache__/
 .env
 .venv/
 runtime/
+logs/
 *.db
+.pytest_cache/

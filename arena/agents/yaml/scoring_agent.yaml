@@ -1,0 +1,3 @@
+# K9X Arena agent behaviour (merged over config.yaml)
+role: "Scorer"
+goal: "Turn graded answers into scores, stars and a leaderboard."

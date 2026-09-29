@@ -1,0 +1,475 @@
+// K9X Arena — web UI (vanilla ES module; screens from the K9X Arena Design canvas)
+const app = document.getElementById('app');
+const S = { me: null, status: null, timers: [], es: null, lobby: null, match: null, stream: null };
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const starText = (n) => '★'.repeat(n || 0) + '☆'.repeat(5 - (n || 0));
+const secs = (ms) => (ms == null ? '—' : `${(ms / 1000).toFixed(1)} s`);
+const dur = (s) => { if (!s) return '—'; const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60); return h ? `${h} h ${m} m` : `${m} m`; };
+const initials = (tag) => { const b = (tag || '?').split(':')[0].replace(/[^a-z0-9]/gi, ''); const d = (b.match(/\d/) || [''])[0]; return (b[0] || '?').toUpperCase() + (d || (b[1] || '').toUpperCase()); };
+const short = (tag) => (tag || '').split(':')[0];
+const TYPE_LABEL = { code: 'Code', extraction: 'Extraction', reasoning: 'Reasoning', summarization: 'Summary', chat: 'Chat', adversarial: 'Adversarial' };
+const SWORDS = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#2dd4bf" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6"/><path d="m16 16 4 4"/><path d="m19 21 2-2"/><path d="M9.5 17.5 21 6V3h-3L6.5 14.5"/><path d="m11 19-6-6"/><path d="m8 16-4 4"/><path d="m5 21-2-2"/></svg>';
+const SHIELD = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>';
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, { credentials: 'same-origin', headers: opts.body && !(opts.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}, ...opts });
+  if (res.status === 401 && !path.startsWith('/api/login')) { S.me = null; location.hash = '#/login'; throw new Error('sign in required'); }
+  const text = await res.text();
+  let data = null; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  if (!res.ok) throw new Error((data && data.detail) ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)) : `HTTP ${res.status}`);
+  return data;
+}
+
+function clearTimers() {
+  S.timers.forEach((t) => clearInterval(t)); S.timers = [];
+  if (S.es) { S.es.close(); S.es = null; }
+}
+const every = (ms, fn) => { S.timers.push(setInterval(fn, ms)); };
+
+// ── header ────────────────────────────────────────────────────────────────────
+async function refreshStatus() {
+  try { S.status = await api('/api/status'); } catch { /* keep last */ }
+  const el = document.getElementById('pills'); if (el) el.innerHTML = pills();
+}
+function pills() {
+  const s = S.status;
+  if (!s) return '<span class="pill">Checking hosts…</span>';
+  const g = s.guardian;
+  return `
+    <span class="pill ${s.ollama.reachable ? '' : 'off'}" title="${esc(s.ollama.url)}"><span class="dot"></span>Ollama ${s.ollama.reachable ? '' : 'offline'}</span>
+    <span class="pill guard ${g.live ? '' : 'off'}" title="${esc(g.detail || g.model)}">${SHIELD}Guardian ${g.live ? 'Live' : 'Offline'}</span>
+    <span class="pill gpu" title="Model loaded on the GPU now">GPU: ${esc((s.gpu && s.gpu.length) ? s.gpu.join(', ') : 'idle')}</span>`;
+}
+function header(active) {
+  const running = S.status && S.status.running_match;
+  const liveHref = running ? `#/match/${running}` : (S.lastMatch ? `#/match/${S.lastMatch}` : '#/history');
+  const resultsHref = S.lastDone ? `#/results/${S.lastDone}` : '#/history';
+  const nav = [['lobby', '#/lobby', 'Lobby'], ['match', liveHref, 'Live match'], ['results', resultsHref, 'Results'], ['history', '#/history', 'History'], ['reviews', '#/reviews', 'Reviews'], ['architecture', '#/architecture', 'Architecture']];
+  return `<header class="top">
+    <a class="brand" href="#/lobby">${SWORDS}<span>K9X ARENA</span></a>
+    <nav class="nav" aria-label="Main">${nav.map(([k, h, l]) => `<a href="${h}" ${k === active ? 'aria-current="page"' : ''}>${l}${k === 'reviews' && S.pendingReviews ? `<span class="count">${S.pendingReviews}</span>` : ''}</a>`).join('')}</nav>
+    <div class="grow"></div>
+    <div class="pills" id="pills">${pills()}</div>
+    <button class="userbtn" data-act="logout" title="Sign out">${esc(S.me?.username)} · ${esc(S.me?.role)} · Sign out</button>
+  </header>`;
+}
+
+// ── router ────────────────────────────────────────────────────────────────────
+async function route() {
+  clearTimers();
+  const parts = (location.hash || '#/lobby').slice(2).split('/');
+  if (parts[0] !== 'login' && !S.me) {
+    try { S.me = await api('/api/me'); } catch { return; }
+  }
+  if (parts[0] !== 'login') {
+    if (!S.status) await refreshStatus();
+    every(15000, refreshStatus);
+    api('/api/reviews').then((r) => { S.pendingReviews = r.length; }).catch(() => {});
+  }
+  try {
+    switch (parts[0]) {
+      case 'login': return renderLogin();
+      case 'match': return renderMatch(+parts[1], parts[2] === 'orbit' ? 'orbit' : 'lanes');
+      case 'results': return renderResults(+parts[1]);
+      case 'task': return renderTask(+parts[1], decodeURIComponent(parts[2] || ''));
+      case 'history': return renderHistory();
+      case 'reviews': return renderReviews();
+      case 'architecture': return renderArchitecture();
+      default: return renderLobby();
+    }
+  } catch (e) {
+    app.innerHTML = header('') + `<main class="page"><div class="banner">${esc(e.message)}</div></main>`;
+  }
+}
+window.addEventListener('hashchange', route);
+
+// ── login ─────────────────────────────────────────────────────────────────────
+async function renderLogin() {
+  let hints = [];
+  try { hints = await api('/api/login-hints'); } catch { /* none */ }
+  app.innerHTML = `<main class="login"><form id="loginform" aria-labelledby="t">
+    <div style="display:flex;justify-content:center">${SWORDS.replace('26', '44').replace('26', '44')}</div>
+    <h1 id="t">K9X ARENA</h1>
+    <p class="muted" style="margin:-8px 0 4px;text-align:center">LLMs head to head, graded, starred, and the router audited.</p>
+    <label class="field">Username<input name="username" autocomplete="username" required></label>
+    <label class="field">Password<input name="password" type="password" autocomplete="current-password" required></label>
+    <div id="loginerr" class="muted" role="alert"></div>
+    <button class="btn primary" type="submit">Sign in</button>
+    ${hints.length ? `<div class="hint">${hints.map((h) => `<span><b>${esc(h.label)}:</b> <span class="mono">${esc(h.username)} / ${esc(h.password)}</span></span>`).join('')}</div>` : ''}
+  </form></main>`;
+  document.getElementById('loginform').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const f = new FormData(ev.target);
+    try {
+      S.me = await api('/api/login', { method: 'POST', body: JSON.stringify({ username: f.get('username'), password: f.get('password') }) });
+      location.hash = '#/lobby';
+    } catch (e) { document.getElementById('loginerr').textContent = e.message; }
+  });
+}
+
+// ── lobby ─────────────────────────────────────────────────────────────────────
+async function renderLobby() {
+  app.innerHTML = header('lobby') + '<main class="page"><div class="empty">Loading contenders…</div></main>';
+  let models, suites, matches;
+  try { [models, suites, matches] = await Promise.all([api('/api/models'), api('/api/suites'), api('/api/matches')]); }
+  catch (e) { app.innerHTML = header('lobby') + `<main class="page"><div class="banner">${esc(e.message)}</div></main>`; return; }
+  rememberMatches(matches);
+  const usable = models.models.filter((m) => !m.is_guardian && !m.is_embedding);
+  const tags = usable.map((m) => m.tag);
+  const prev = S.lobby || {};
+  const judgeDefault = tags.includes(models.default_judge) ? models.default_judge : (tags[tags.length - 1] || '');
+  S.lobby = {
+    models: usable, suites, matches, guardian: models.guardian_model,
+    selected: prev.selected || new Set(models.default_contestants.filter((t) => tags.includes(t) && t !== judgeDefault)),
+    judge: prev.judge || judgeDefault,
+    suite: prev.suite || (suites[0] && suites[0].key) || '',
+    runs: prev.runs || models.runs_per_task, routerMode: prev.routerMode ?? models.router_mode,
+    upload: prev.upload || null, error: null, busy: false,
+  };
+  drawLobby();
+}
+function drawLobby() {
+  const L = S.lobby;
+  const suite = L.suites.find((s) => s.key === L.suite);
+  const selected = [...L.selected].filter((t) => t !== L.judge);
+  const estH = (selected.length * (suite ? suite.tasks : 0) * L.runs * 25) / 3600;
+  const cards = L.models.map((m) => {
+    const isJudge = m.tag === L.judge; const on = L.selected.has(m.tag) && !isJudge;
+    return `<article class="card ${on ? 'on' : ''}">
+      <div class="row"><div class="orb">${esc(initials(m.tag))}</div>
+        <div style="flex-grow:1;min-width:0"><div class="name">${esc(m.tag)}</div><div class="muted" style="font-size:13px">${esc([m.family, m.parameters, m.quantization, m.size_gb + ' GB'].filter(Boolean).join(' · '))}</div></div>
+        ${isJudge ? '<span class="badge amber">Judge</span>' : ''}</div>
+      <div class="stats"><div><b>${m.wins} of ${m.matches}</b>Matches won</div><div><b class="gold">${m.avg_stars ?? '—'}</b>Average stars</div><div><b>${esc(TYPE_LABEL[m.best_at] || '—')}</b>Best at</div></div>
+      <label class="check"><input type="checkbox" data-act="toggle" data-tag="${esc(m.tag)}" ${on ? 'checked' : ''} ${isJudge ? 'disabled' : ''}>
+        <span>${isJudge ? 'Judging the next match (cannot also compete)' : (on ? 'Entered in next match' : 'Sitting out')}</span></label>
+    </article>`;
+  }).join('');
+  const recent = L.matches.slice(0, 5).map((m) => `<tr class="click" data-href="#/${m.status === 'completed' ? 'results' : 'match'}/${m.id}">
+      <td class="mono muted">#${m.id}</td><td>${esc(m.suite_name)}</td><td class="mono" style="font-size:13px">${esc(m.contenders.map(short).join(' · '))}</td>
+      <td>${statusBadge(m.status)}</td><td class="mono" style="color:var(--amber);font-size:13px">${esc(m.winner || '—')}</td>
+      <td class="muted">${dur(m.finished_at && m.started_at ? m.finished_at - m.started_at : 0)}</td></tr>`).join('');
+  const up = L.upload;
+  const step = (label, st) => `<span class="s ${st}"><span class="n">${st === 'done' ? '✓' : st === 'fail' ? '✕' : st === 'active' ? '…' : ''}</span>${label}</span>`;
+  const stages = !up ? ['', '', ''] : up.stage === 'checking' ? ['active', '', ''] : up.stage === 'precheck' ? ['fail', '', ''] : up.stage === 'guardian' ? ['done', 'fail', ''] : ['done', 'done', 'done'];
+  const guardianOff = S.status && !S.status.guardian.live;
+  app.innerHTML = header('lobby') + `<main class="page"><div class="lobby">
+    <section aria-labelledby="roster" style="display:flex;flex-direction:column;gap:18px;min-width:0">
+      <div class="row" style="align-items:baseline;gap:14px"><h1 id="roster">Contenders</h1><span class="muted" style="font-size:14px">Pulled on this Ollama host · pick who enters the next match</span></div>
+      ${L.models.length ? `<div class="roster">${cards}</div>` : '<div class="panel empty">No models pulled on the Ollama host yet. Pull some with <span class="mono">ollama pull &lt;model&gt;</span>.</div>'}
+      <section class="panel" aria-labelledby="recent"><h2 id="recent">Recent matches</h2>
+        ${recent ? `<table class="grid"><thead><tr><th>Match</th><th>Suite</th><th>Contenders</th><th>Status</th><th>Winner</th><th>Duration</th></tr></thead><tbody>${recent}</tbody></table>` : '<div class="empty">No matches yet. Start one on the right.</div>'}
+      </section>
+    </section>
+    <aside class="panel teal newmatch" aria-labelledby="nm">
+      <h2 id="nm">New match</h2>
+      ${guardianOff ? '<div class="banner">Granite Guardian is offline. Matches and uploads are blocked until it is reachable (it never runs unscreened).</div>' : ''}
+      ${L.error ? `<div class="banner" role="alert">${esc(L.error)}</div>` : ''}
+      <div class="field">Contenders<div class="chips">${selected.length ? selected.map((t) => `<span class="chip">${esc(t)}</span>`).join('') : '<span class="muted">Pick at least one on the left</span>'}</div></div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
+        <label class="field">Judge (not a contender)<select data-act="judge">${L.models.map((m) => `<option ${m.tag === L.judge ? 'selected' : ''}>${esc(m.tag)}</option>`).join('')}</select></label>
+        <label class="field">Runs per task<select data-act="runs">${[1, 2, 3, 4, 5].map((n) => `<option ${n === L.runs ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+      </div>
+      <label class="field">Task suite<select data-act="suite">${L.suites.map((s) => `<option value="${esc(s.key)}" ${s.key === L.suite ? 'selected' : ''}>${esc(s.name)} · ${s.tasks} tasks · ${s.source}</option>`).join('')}</select></label>
+      <div class="upload">
+        <div class="row"><div style="flex-grow:1"><div style="font-size:14px;font-weight:600">Or upload your own</div><div class="muted" style="font-size:12px">Task suite (.yaml) or source document (.md, .txt) · scanned by Granite Guardian</div></div>
+          <label class="btn small" style="cursor:pointer">Upload<input type="file" accept=".yaml,.yml,.md,.txt" data-act="upload" style="display:none"></label></div>
+        <div class="steps" aria-label="Upload screening">${step('Pre-check', stages[0])}<span class="ln"></span>${step('Granite Guardian', stages[1])}<span class="ln"></span>${step('Accepted', stages[2])}</div>
+        ${up ? `<div class="mono" style="font-size:12px;color:${up.accepted ? 'var(--teal-2)' : up.stage === 'checking' ? 'var(--muted)' : 'var(--red-2)'}" role="status">${esc(up.file_name)} · ${esc(up.accepted ? `accepted · ${up.tasks} tasks` : up.stage === 'checking' ? 'scanning…' : up.reason)}</div>` : ''}
+      </div>
+      <label class="check"><input type="checkbox" data-act="router" ${L.routerMode ? 'checked' : ''}><span>Also run through the Intelligent Model Router</span></label>
+      <div class="row muted" style="justify-content:space-between;font-size:13px;border-top:1px solid var(--line);padding-top:12px">
+        <span>${selected.length} contenders × ${suite ? suite.tasks : 0} tasks × ${L.runs} runs · about ${estH.toFixed(1)} h</span><span>Guardian screens every prompt</span></div>
+      <button class="btn primary" style="height:52px;font-size:17px;justify-content:center" data-act="start" ${!selected.length || !L.suite || L.busy || guardianOff ? 'disabled' : ''}>${L.busy ? 'Starting…' : 'Start match'}</button>
+    </aside></div></main>`;
+}
+function statusBadge(s) {
+  const map = { completed: 'teal', running: 'amber', queued: 'grey', paused: 'grey', failed: 'red' };
+  return `<span class="badge ${map[s] || 'grey'}">${esc(s)}</span>`;
+}
+function rememberMatches(list) {
+  const running = list.find((m) => m.status === 'running');
+  S.lastMatch = running ? running.id : (list[0] && list[0].id);
+  const done = list.find((m) => m.status === 'completed'); S.lastDone = done && done.id;
+}
+
+// ── delegated events ──────────────────────────────────────────────────────────
+app.addEventListener('click', async (ev) => {
+  const row = ev.target.closest('tr[data-href]');
+  if (row && !ev.target.closest('button,a')) { location.hash = row.dataset.href; return; }
+  const el = ev.target.closest('[data-act]'); if (!el) return;
+  const act = el.dataset.act;
+  if (act === 'logout') { await api('/api/logout', { method: 'POST' }).catch(() => {}); S.me = null; location.hash = '#/login'; }
+  if (act === 'start') startMatch();
+  if (['pause', 'cancel', 'resume'].includes(act)) {
+    try { await api(`/api/matches/${el.dataset.id}/${act}`, { method: 'POST' }); } catch (e) { alert(e.message); }
+    if (act === 'resume') route();
+  }
+  if (act === 'delete' && confirm(`Delete match #${el.dataset.id} and all its results?`)) {
+    try { await api(`/api/matches/${el.dataset.id}`, { method: 'DELETE' }); route(); } catch (e) { alert(e.message); }
+  }
+  if (act === 'copy') {
+    const txt = document.getElementById('yaml').textContent;
+    try { await navigator.clipboard.writeText(txt); el.textContent = 'Copied'; setTimeout(() => { el.textContent = 'Copy'; }, 1500); } catch { el.textContent = 'Select and copy'; }
+  }
+  if (act === 'decide') {
+    const input = document.getElementById(`rv-${el.dataset.id}`);
+    try { await api(`/api/reviews/${el.dataset.id}`, { method: 'POST', body: JSON.stringify({ score: +input.value }) }); route(); } catch (e) { alert(e.message); }
+  }
+});
+app.addEventListener('change', async (ev) => {
+  const el = ev.target.closest('[data-act]'); if (!el || !S.lobby) return;
+  const L = S.lobby, act = el.dataset.act;
+  if (act === 'toggle') { el.checked ? L.selected.add(el.dataset.tag) : L.selected.delete(el.dataset.tag); }
+  if (act === 'judge') { L.judge = el.value; L.selected.delete(el.value); }
+  if (act === 'runs') L.runs = +el.value;
+  if (act === 'suite') L.suite = el.value;
+  if (act === 'router') L.routerMode = el.checked;
+  if (act === 'upload' && el.files[0]) {
+    const file = el.files[0];
+    L.upload = { stage: 'checking', file_name: file.name }; drawLobby();
+    const fd = new FormData(); fd.append('file', file);
+    try {
+      const r = await api('/api/uploads', { method: 'POST', body: fd });
+      L.upload = r;
+      if (r.accepted) { L.suites = await api('/api/suites'); L.suite = r.suite_key; }
+    } catch (e) { L.upload = { stage: 'precheck', file_name: file.name, reason: e.message }; }
+  }
+  drawLobby();
+});
+async function startMatch() {
+  const L = S.lobby; L.busy = true; L.error = null; drawLobby();
+  try {
+    const r = await api('/api/matches', { method: 'POST', body: JSON.stringify({
+      contenders: [...L.selected].filter((t) => t !== L.judge), judge: L.judge, suite: L.suite, runs_per_task: L.runs, router_mode: L.routerMode }) });
+    L.busy = false; location.hash = `#/match/${r.id}`;
+  } catch (e) { L.busy = false; L.error = e.message; drawLobby(); }
+}
+
+// ── live match (lanes + orbit) ────────────────────────────────────────────────
+const PHASES = [['screening', 'Screening'], ['answering', 'Answering'], ['router', 'Router mode'], ['grading', 'Grading'], ['judging', 'Judging'], ['scoring', 'Scoring']];
+async function renderMatch(id, view) {
+  if (!id) { location.hash = '#/history'; return; }
+  S.stream = { events: [] };
+  const load = async () => { S.match = await api(`/api/matches/${id}`); };
+  try { await load(); } catch (e) { app.innerHTML = header('match') + `<main class="page"><div class="banner">${esc(e.message)}</div></main>`; return; }
+  S.lastMatch = id;
+  const draw = () => (view === 'orbit' ? drawOrbit() : drawLanes());
+  draw();
+  S.es = new EventSource(`/api/matches/${id}/stream`);
+  S.es.onmessage = (msg) => {
+    const d = JSON.parse(msg.data);
+    S.stream.status = d.status; S.stream.phase = d.phase; S.stream.error = d.error; S.stream.progress = d.progress; S.stream.current = d.current;
+    if (d.events && d.events.length) S.stream.events = [...S.stream.events, ...d.events].slice(-60);
+    Object.assign(S.match.match, { status: d.status, phase: d.phase, error: d.error });
+    S.match.progress = d.progress || S.match.progress; S.match.current = d.current;
+    draw();
+  };
+  every(4000, async () => { if (['running', 'queued'].includes(S.match.match.status)) { try { await load(); draw(); } catch { /* ignore */ } } });
+  api(`/api/matches/${id}/events`).then((ev) => { S.stream.events = ev.slice(-60); draw(); }).catch(() => {});
+}
+function matchControls(m) {
+  if (m.status === 'running' || m.status === 'queued') return `<button class="btn" data-act="pause" data-id="${m.id}">Pause after this task</button><button class="btn danger" data-act="cancel" data-id="${m.id}">Cancel</button>`;
+  if (m.status === 'paused' || m.status === 'failed') return `<button class="btn primary" data-act="resume" data-id="${m.id}">Resume</button>`;
+  if (m.status === 'completed') return `<a class="btn primary" href="#/results/${m.id}">View results</a>`;
+  return '';
+}
+function phaseState(m, key) {
+  const order = PHASES.map((p) => p[0]); const cur = m.status === 'completed' ? 'done' : (m.phase || '');
+  const iCur = order.indexOf(cur === 'safety' ? 'grading' : cur); const i = order.indexOf(key);
+  if (cur === 'done' || (iCur > i)) return 'done';
+  return iCur === i ? 'now' : '';
+}
+function progressOf(key) {
+  const p = (S.match.progress || {})[key === 'grading' ? 'safety' : key];
+  return p && p.total ? Math.round((100 * p.done) / p.total) : null;
+}
+function drawLanes() {
+  const D = S.match, m = D.match; const live = ['running', 'queued'].includes(m.status);
+  const ans = D.lanes.reduce((a, l) => a + l.answers, 0), tot = D.lanes.reduce((a, l) => a + l.total, 0);
+  const lanes = D.lanes.map((l) => {
+    const active = l.state === 'answering';
+    const pill = { answering: 'teal', done: 'grey', waiting: 'grey', queued: 'grey' }[l.state];
+    const label = { answering: 'Answering', done: 'All answered', waiting: 'Waiting for GPU', queued: 'Queued' }[l.state];
+    const cards = l.recent.length ? l.recent.map((c) => `<a class="tcard" href="#/task/${m.id}/${encodeURIComponent(c.task_id)}">
+        <div class="row" style="gap:8px"><span class="mono muted" style="font-size:12px">${esc(c.task_id)}</span><span class="tag">${esc(c.type)}</span><span class="grow"></span><span class="muted" style="font-size:12px">run ${c.run_no} · ${secs(c.latency_ms)}</span></div>
+        <div style="font-size:14px">${esc(c.title)}</div>
+        <div class="preview">${esc(c.error ? c.error : c.preview || '(empty)')}</div>
+        <div class="row" style="gap:8px">${c.error ? '<span class="badge red">Error</span>' : (c.refused && c.type !== 'adversarial') ? '<span class="badge red">Over-refusal</span>' : c.pending ? '<span class="badge amber">Pending review</span>' : c.score != null ? `<span class="badge teal">${c.score.toFixed(0)}</span>` : '<span class="badge grey">Graded after all answers</span>'}</div>
+      </a>`).join('') : '<div class="muted" style="font-size:13px;padding:8px">No answers yet.</div>';
+    return `<section class="lane ${active ? 'active' : ''}" aria-label="${esc(l.model)}">
+      <div class="head"><div class="row"><span class="mono" style="font-size:16px;flex-grow:1;overflow-wrap:anywhere">${esc(l.model)}</span><span class="badge ${pill}">${label}</span></div>
+        <div class="row" style="align-items:baseline;gap:14px"><span class="score">${l.score != null ? l.score.toFixed(1) : '—'}</span><span class="muted" style="font-size:12px">average<br>quality</span><span class="grow"></span><span class="muted" style="font-size:13px">${l.answers} / ${l.total} answers</span></div>
+        <div class="bar" style="height:5px"><div style="width:${l.total ? (100 * l.answers) / l.total : 0}%"></div></div></div>
+      <div class="body">${cards}</div></section>`;
+  }).join('');
+  const phases = PHASES.map(([k, label]) => { const st = phaseState(m, k); const p = progressOf(k);
+    return `<div class="phase ${st}"><span>${st === 'done' ? '✓ ' : ''}${label}</span><div class="bar"><div style="width:${st === 'done' ? 100 : (p ?? 0)}%"></div></div></div>`; }).join('');
+  const events = (S.stream.events || []).slice(-14).reverse().map((e) => `<div class="ev"><span class="k k-${esc(e.kind)}">${esc(e.kind)}</span><span>${esc(e.text)}</span></div>`).join('');
+  app.innerHTML = header('match') + `<main class="page">
+    ${m.status === 'failed' ? `<div class="banner" role="alert">Match stopped: ${esc(m.error)}</div>` : ''}
+    ${m.status === 'paused' ? `<div class="banner info">Paused (${esc(m.phase)}). Resume picks up where it stopped; finished answers are kept.</div>` : ''}
+    <div class="matchhead">
+      <div style="flex-grow:1"><div class="row">${live ? '<span class="live"><span class="dot"></span>LIVE</span>' : statusBadge(m.status)}<h1>Match #${m.id} · ${esc(m.suite_name)}</h1></div>
+        <div class="muted" style="font-size:14px;margin-top:4px">${m.runs_per_task} runs per task · judge <span class="mono">${esc(m.judge)}</span> · router mode ${m.router_mode ? 'on' : 'off'} · ${ans} of ${tot} answers</div></div>
+      <div class="viewswitch" role="group" aria-label="View"><a href="#/match/${m.id}" aria-current="page">Lanes</a><a href="#/match/${m.id}/orbit">Orbit</a></div>
+      ${matchControls(m)}
+    </div>
+    <div class="phases" aria-label="Match phases">${phases}</div>
+    <div class="lanes" style="grid-template-columns:repeat(${Math.min(D.lanes.length, 4)},minmax(0,1fr))">${lanes}</div>
+    <section class="ticker" aria-label="Trace events">${events || '<span class="muted">Waiting for events…</span>'}</section>
+  </main>`;
+}
+function drawOrbit() {
+  const D = S.match, m = D.match; const cur = D.current || {};
+  const who = [...m.contenders.map((t) => ({ tag: t, judge: false })), { tag: m.judge, judge: true }];
+  let seed = 7; const rand = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+  const stars = Array.from({ length: 110 }, () => { const s = rand() < 0.85 ? 1.5 : 2.5; return `<span class="star" style="left:${(rand() * 100).toFixed(2)}%;top:${(rand() * 100).toFixed(2)}%;width:${s}px;height:${s}px;animation-delay:-${(rand() * 4).toFixed(2)}s"></span>`; }).join('');
+  const base = 170, step = Math.min(78, 250 / Math.max(1, who.length - 1));
+  const rings = who.map((w, i) => {
+    const r = Math.round(base + i * step); const period = 70 + i * 28; const delay = -(period * ((i * 0.37 + 0.1) % 1));
+    const active = (w.judge && cur.model === 'judge') || (!w.judge && cur.model === w.tag);
+    const lane = D.lanes.find((l) => l.model === w.tag);
+    const role = w.judge ? (active ? 'Judge · judging' : 'Judge') : (active ? 'Contender · answering' : lane ? ({ done: 'Contender · done', waiting: 'Contender · waiting', queued: 'Contender · queued' }[lane.state] || 'Contender') : 'Contender');
+    return `<div class="ring ${w.judge ? 'judge' : ''} ${active ? 'active' : ''}" style="left:${-r}px;top:${-r}px;width:${2 * r}px;height:${2 * r}px;animation-duration:${period}s;animation-delay:${delay}s">
+      <div class="beam" style="width:${r}px">${active ? '<span class="dot-out"></span><span class="dot-out" style="animation-delay:-.55s"></span><span class="dot-out" style="animation-delay:-1.1s"></span><span class="dot-back" style="animation-delay:-.3s"></span><span class="dot-back" style="animation-delay:-1.2s"></span>' : ''}</div>
+      <div class="anchor"><div class="planet" style="animation-duration:${period}s;animation-delay:${delay}s"><div class="orb">${esc(initials(w.tag))}</div><div class="pname">${esc(w.tag)}</div><div class="prole">${esc(role)}</div></div></div></div>`;
+  }).join('');
+  const board = [...D.lanes].sort((a, b) => (b.score ?? -1) - (a.score ?? -1)).map((l) => `<div class="scorerow"><span class="mono grow" style="font-size:13px">${esc(l.model)}</span><span class="muted" style="font-size:12px">${l.answers}/${l.total}</span><span class="display" style="font-size:22px">${l.score != null ? l.score.toFixed(1) : '—'}</span></div>`).join('');
+  const live = ['running', 'queued'].includes(m.status);
+  const ans = D.lanes.reduce((a, l) => a + l.answers, 0), tot = D.lanes.reduce((a, l) => a + l.total, 0);
+  app.innerHTML = header('match') + `<main class="orbit">
+    <div class="nebula" aria-hidden="true"></div><div aria-hidden="true">${stars}</div>
+    <div class="stage" aria-hidden="true">${rings}
+      <div class="shield"></div><div class="shield-label">${SHIELD} GRANITE GUARDIAN</div>
+      <div class="core"><b>K9X</b><span>Intelligent<br>Model Router</span></div></div>
+    <aside class="hud left" aria-label="Match status">
+      <div class="row">${live ? '<span class="live"><span class="dot"></span>LIVE</span>' : statusBadge(m.status)}${m.phase && m.phase !== m.status ? `<span class="muted" style="font-size:13px">${esc(m.phase)}</span>` : ''}</div>
+      <h1>Match #${m.id}<br>${esc(m.suite_name)}</h1>
+      <div class="bar" style="height:6px"><div style="width:${tot ? (100 * ans) / tot : 0}%;box-shadow:0 0 12px var(--teal)"></div></div>
+      <span class="muted" style="font-size:13px">${ans} of ${tot} answers</span>
+      <div class="box"><span style="font-size:12px;color:var(--teal-2);letter-spacing:1px">NOW</span>
+        ${cur.model ? `<span class="mono" style="font-size:15px">${esc(cur.model === 'judge' ? m.judge + ' (judge)' : cur.model === 'router' ? 'K9ModelRouter' : cur.model)}</span><span style="font-size:13px;color:var(--text-2)">${esc(cur.task_id)} · ${esc(cur.title)}</span>` : `<span class="muted" style="font-size:13px">${m.status === 'completed' ? 'Match complete' : 'Idle'}</span>`}</div>
+      <div class="row"><div class="viewswitch" role="group" aria-label="View"><a href="#/match/${m.id}">Lanes</a><a href="#/match/${m.id}/orbit" aria-current="page">Orbit</a></div>${matchControls(m)}</div>
+    </aside>
+    <aside class="hud right" aria-label="Scores"><span class="muted" style="font-size:12px;letter-spacing:1px">AVERAGE QUALITY SO FAR</span>${board}</aside>
+    <footer class="legend"><span><i style="background:var(--teal-2);box-shadow:0 0 8px var(--teal)"></i>Request from the router</span><span><i style="background:var(--amber);box-shadow:0 0 8px var(--amber)"></i>Answer coming back</span><span><i style="border:2px solid #2dd4bf66;width:14px;height:14px"></i>Guardian screens every prompt</span><span class="grow"></span><span>The lit beam is the model on the GPU right now; orbits are decorative.</span></footer>
+  </main>`;
+}
+
+// ── results ───────────────────────────────────────────────────────────────────
+async function renderResults(id) {
+  if (!id) { location.hash = '#/history'; return; }
+  const D = await api(`/api/matches/${id}`); const m = D.match; const R = D.report;
+  if (m.status === 'completed') S.lastDone = id;
+  if (!R) {
+    app.innerHTML = header('results') + `<main class="page"><div class="banner info">Match #${id} has no results yet (${esc(m.status)}). <a href="#/match/${id}">Watch it live</a>.</div></main>`; return;
+  }
+  const types = D.task_types.filter((t) => D.stars.some((s) => s.task_type === t));
+  const models = R.leaderboard.map((b) => b.model);
+  const best = {}; D.stars.forEach((s) => { if (!best[s.task_type] || s.quality > best[s.task_type].quality) best[s.task_type] = s; });
+  const cell = (mdl, t) => { const s = D.stars.find((x) => x.model === mdl && x.task_type === t); if (!s) return '<td class="muted">—</td>';
+    const isBest = best[t] && best[t].model === mdl;
+    return `<td><div class="cell ${isBest ? 'best' : ''}"><span class="stars" aria-label="${s.stars} of 5 stars">${starText(s.stars)}</span><span class="row" style="gap:6px"><span class="n">${s.score.toFixed(0)}</span>${isBest ? '<span class="bestbadge">Best</span>' : ''}</span></div></td>`; };
+  const grid = `<table class="grid"><thead><tr><th>Model</th>${types.map((t) => `<th>${TYPE_LABEL[t]}</th>`).join('')}</tr></thead><tbody>${models.map((mdl) => `<tr><td class="mono">${esc(mdl)}</td>${types.map((t) => cell(mdl, t)).join('')}</tr>`).join('')}</tbody></table>`;
+  const board = R.leaderboard.map((b) => `<tr><td class="rank r${b.rank}">${b.rank}</td><td class="mono">${esc(b.model)}</td><td class="display" style="font-size:20px">${b.score.toFixed(1)}</td><td class="stars">${starText(b.stars)}</td><td>${secs(b.p50_ms)} / ${secs(b.p95_ms)}</td><td>${b.over_refusals} of ${b.answers}</td><td>± ${b.spread}</td></tr>`).join('');
+  const audit = D.audit.map((a) => { const ok = a.verdict === 'match'; const na = a.verdict === 'not_in_match';
+    return `<tr><td>${TYPE_LABEL[a.task_type] || esc(a.task_type)}</td><td class="mono" style="font-size:12px">${esc(short(a.router_model))} (${esc(a.router_alias)}) → best ${esc(short(a.best_model))}</td>
+      <td>${na ? '<span class="badge grey">Not in match</span>' : ok ? '<span class="badge teal">Match</span>' : '<span class="badge amber">Mismatch</span>'}</td>
+      <td class="display" style="font-size:18px;text-align:right;color:${ok || na ? 'var(--muted)' : 'var(--amber)'}">${a.regret == null ? '—' : ok ? '0' : '−' + a.regret}</td></tr>`; }).join('');
+  const tasks = D.tasks.map((t) => `<tr class="click" data-href="#/task/${id}/${encodeURIComponent(t.id)}"><td class="mono muted">${esc(t.id)}</td><td><span class="tag">${esc(t.type)}</span></td><td>${esc(t.title)}${t.screen && t.screen.excluded ? ' <span class="badge red">Excluded by screening</span>' : ''}</td>${models.map((mdl) => { const v = (D.task_scores[t.id] || {})[mdl]; return `<td class="display" style="font-size:18px">${v == null ? '—' : v.toFixed(0)}</td>`; }).join('')}</tr>`).join('');
+  const w = R.winner || {}; const J = R.judge || {}; const RT = R.router || {};
+  app.innerHTML = header('results') + `<main class="page">
+    <div class="row" style="align-items:flex-end"><div class="grow"><h1 class="display" style="margin:0;font-size:34px">Match #${id} · ${esc(m.suite_name)}</h1>
+      <div class="muted" style="font-size:14px">${m.contenders.length} contenders · ${D.tasks.length} tasks · ${m.runs_per_task} runs · judge <span class="mono">${esc(m.judge)}</span> · ${dur(m.finished_at && m.started_at ? m.finished_at - m.started_at : 0)}</div></div>
+      <a class="btn" href="#/match/${id}">Replay view</a><a class="btn primary" href="#/lobby">Rematch</a></div>
+    ${J.pending ? `<div class="banner info" style="margin-top:14px">${J.pending} judged answers await review, so these results are provisional. <a href="#/reviews">Review them</a>.</div>` : ''}
+    <section class="kpis" aria-label="Summary">
+      <div class="kpi gold"><div class="muted" style="font-size:13px">Winner</div><div class="v"><span class="mono" style="font-size:20px;color:var(--amber)">${esc(w.model || '—')}</span><span class="big">${w.score != null ? w.score.toFixed(1) : ''}</span></div></div>
+      <div class="kpi"><div class="muted" style="font-size:13px">Router picked the best model</div><div class="v"><span class="big">${RT.types ? `${RT.matches} of ${RT.types}` : '—'}</span><span class="muted">task types</span></div></div>
+      <div class="kpi"><div class="muted" style="font-size:13px">Router regret</div><div class="v"><span class="big">${RT.avg_regret ?? '—'}</span><span class="muted">points lost on average</span></div></div>
+      <div class="kpi"><div class="muted" style="font-size:13px">Judge disagreement</div><div class="v"><span class="big">${J.disagreements ?? 0} of ${J.judged ?? 0}</span><span class="muted">sent to review</span></div></div>
+    </section>
+    <div class="results">
+      <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+        <section class="panel"><h2>Stars by task type</h2>${grid}<p class="muted" style="font-size:12px;margin:10px 0 0">Code, extraction and reasoning graded against right answers; summary and chat by two anonymized judge passes; adversarial by refusal behaviour, leaks and Granite Guardian's verdict.</p></section>
+        <section class="panel"><h2>Leaderboard</h2><table class="grid"><thead><tr><th>#</th><th>Model</th><th>Score</th><th>Stars</th><th>Latency p50 / p95</th><th>Over-refusals</th><th>Run-to-run spread</th></tr></thead><tbody>${board}</tbody></table></section>
+        <section class="panel"><h2>Tasks</h2><table class="grid"><thead><tr><th>Task</th><th>Type</th><th>Title</th>${models.map((mdl) => `<th class="mono" style="text-transform:none">${esc(short(mdl))}</th>`).join('')}</tr></thead><tbody>${tasks}</tbody></table></section>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+        <section class="panel"><h2>Router audit</h2><p class="muted" style="font-size:12.5px;margin:0 0 8px">Did K9ModelRouter send each task type to the model that scored best?</p>
+          ${audit ? `<table class="grid"><tbody>${audit}</tbody></table>` : '<div class="empty">Router mode was off for this match.</div>'}</section>
+        <section class="panel teal"><div class="row"><h2 class="grow" style="margin:0">Recommended router config</h2><button class="btn small" data-act="copy">Copy</button><a class="btn small primary" href="/api/matches/${id}/config.yaml">Download</a></div>
+          <pre class="yaml" id="yaml" style="margin-top:10px">${esc(R.recommended_yaml || '')}</pre>
+          <ul class="muted" style="font-size:12.5px;margin:10px 0 0;padding-left:18px">${(R.recommended_notes || []).map((n) => `<li>${esc(n)}</li>`).join('')}</ul></section>
+      </div>
+    </div></main>`;
+}
+
+// ── task drill-down ───────────────────────────────────────────────────────────
+async function renderTask(id, taskId) {
+  const D = await api(`/api/matches/${id}/tasks/${encodeURIComponent(taskId)}`);
+  const t = D.task; const isAdmin = S.me && S.me.role === 'admin';
+  const byModel = {}; D.runs.filter((r) => r.mode === 'forced').forEach((r) => { (byModel[r.model] = byModel[r.model] || []).push(r); });
+  const grades = (r) => Object.values(r.grades).map((g) => `<div style="font-size:13px"><span class="badge ${g.score >= 70 ? 'teal' : g.score >= 40 ? 'amber' : 'red'}">${esc(g.grader)} · ${g.score.toFixed(0)}${g.grade ? ' · ' + esc(g.grade) : ''}</span>
+      ${g.detail && g.detail.rationale ? `<span class="muted"> ${esc(g.detail.rationale)}</span>` : g.detail ? `<span class="muted mono" style="font-size:12px"> ${esc(JSON.stringify(g.detail).slice(0, 220))}</span>` : ''}</div>`).join('');
+  const review = (r) => r.review ? `<div class="row" style="gap:8px;font-size:13px"><span class="badge ${r.review.status === 'pending' ? 'amber' : 'teal'}">${r.review.status === 'pending' ? 'Pending review' : 'Reviewed: ' + r.review.decided_score}</span><span class="muted">${esc(r.review.reason)}</span>
+      ${r.review.status === 'pending' && isAdmin ? `<label class="sr-only" for="rv-${r.review.id}">Score 0 to 100</label><input id="rv-${r.review.id}" type="number" min="0" max="100" value="${Math.round(Object.values(r.grades).filter((g) => g.grader.startsWith('judge')).reduce((a, g, _, arr) => a + g.score / arr.length, 0))}" style="width:80px;height:36px;border-radius:8px;background:var(--bg-2);border:1px solid var(--line);color:var(--text);padding:0 8px"><button class="btn small primary" data-act="decide" data-id="${r.review.id}">Decide</button>` : ''}</div>` : '';
+  const outs = Object.entries(byModel).map(([mdl, rs]) => `<section class="panel out"><h2 class="mono">${esc(mdl)}</h2>${rs.map((r) => `<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+      <div class="row muted" style="font-size:12px">run ${r.run_no} · ${secs(r.latency_ms)}${r.refused ? ' · <span class="badge red">Refused</span>' : ''}</div>
+      <pre>${esc(r.error ? 'ERROR: ' + r.error : r.output || '(empty)')}</pre>${grades(r)}${review(r)}</div>`).join('')}</section>`).join('');
+  const router = D.runs.filter((r) => r.mode === 'router').map((r) => `<section class="panel out"><h2>Router mode · <span class="mono">${esc(r.alias)} → ${esc(r.model)}</span></h2><pre>${esc(r.error ? 'ERROR: ' + r.error : r.output)}</pre></section>`).join('');
+  app.innerHTML = header('results') + `<main class="page" style="display:flex;flex-direction:column;gap:16px">
+    <div class="row"><a class="btn small" href="#/results/${id}">← Results</a><h1 class="display grow" style="margin:0;font-size:30px">${esc(t.id)} · ${esc(t.title)}</h1><span class="tag">${esc(t.type)}</span></div>
+    ${t.screen ? `<div class="muted" style="font-size:13px">Screening: k9x_Shield ${esc(t.screen.shield)} · Granite Guardian ${esc(t.screen.guardian)}${t.screen.excluded ? ' · <b style="color:var(--red-2)">excluded</b>' : ''}</div>` : ''}
+    <section class="panel"><h2>Prompt</h2><pre class="prompt">${esc(t.prompt)}</pre></section>
+    <section class="panel"><h2>How it is graded</h2><pre class="prompt">${esc(JSON.stringify(D.grading, null, 2))}</pre></section>
+    <div class="outputs">${outs || '<div class="empty">No answers yet.</div>'}</div>${router}
+  </main>`;
+}
+
+// ── history & reviews ─────────────────────────────────────────────────────────
+async function renderHistory() {
+  const list = await api('/api/matches'); rememberMatches(list);
+  const isAdmin = S.me && S.me.role === 'admin';
+  const rows = list.map((m) => `<tr><td class="mono muted">#${m.id}</td><td>${esc(m.suite_name)}</td><td class="mono" style="font-size:13px">${esc(m.contenders.join(', '))}</td><td>${statusBadge(m.status)}</td>
+    <td class="mono" style="color:var(--amber)">${esc(m.winner || '—')}${m.winner_score != null ? ` · ${m.winner_score.toFixed(1)}` : ''}</td><td class="muted">${new Date(m.created_at * 1000).toLocaleString()}</td>
+    <td><div class="row" style="gap:6px"><a class="btn small" href="#/match/${m.id}">Match</a>${m.status === 'completed' ? `<a class="btn small primary" href="#/results/${m.id}">Results</a>` : ''}${isAdmin ? `<button class="btn small danger" data-act="delete" data-id="${m.id}">Delete</button>` : ''}</div></td></tr>`).join('');
+  app.innerHTML = header('history') + `<main class="page"><h1 class="display" style="margin:0 0 16px;font-size:40px">History</h1>
+    <section class="panel">${rows ? `<table class="grid"><thead><tr><th>Match</th><th>Suite</th><th>Contenders</th><th>Status</th><th>Winner</th><th>Started</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : '<div class="empty">No matches yet.</div>'}</section></main>`;
+}
+async function renderReviews() {
+  const list = await api('/api/reviews'); S.pendingReviews = list.length;
+  const rows = list.map((r) => `<tr class="click" data-href="#/task/${r.match_id}/${encodeURIComponent(r.task_id || '')}"><td class="mono muted">#${r.match_id}</td><td class="mono">${esc(r.task_id || '')}</td><td class="mono">${esc(r.model || '')}</td><td>${esc(r.reason)}</td><td class="muted">${new Date(r.created_at * 1000).toLocaleString()}</td></tr>`).join('');
+  app.innerHTML = header('reviews') + `<main class="page"><h1 class="display" style="margin:0 0 6px;font-size:40px">Reviews</h1>
+    <p class="muted" style="margin:0 0 16px">Answers the two judge passes disagreed on. An admin decides the score on the task page; results update right away.</p>
+    <section class="panel">${rows ? `<table class="grid"><thead><tr><th>Match</th><th>Task</th><th>Model</th><th>Reason</th><th>Raised</th></tr></thead><tbody>${rows}</tbody></table>` : '<div class="empty">Nothing waiting for review.</div>'}</section></main>`;
+}
+
+// ── architecture ──────────────────────────────────────────────────────────────
+function renderArchitecture() {
+  const steps = [
+    ['1 · SuiteSquad', 'Loads the task suite. Every task prompt is screened by k9x_Shield and Granite Guardian before any contender sees it. Guardian fails closed: if it is down, nothing runs.'],
+    ['2 · ContestantSquad', 'Runs every task on every contender, grouped by model so the GPU swaps as rarely as possible, then once more through the Intelligent Model Router with the real task type.'],
+    ['3 · GradingSquad', 'Grades against right answers first (unit tests in a sandbox, JSON fields, exact answers), then Granite Guardian’s safety pass on adversarial answers, then two anonymized judge passes. Disagreements go to Reviews.'],
+    ['4 · ReportSquad', 'Turns grades into scores and stars, audits the router’s choices against the best contender, and writes a recommended model_catalog.'],
+  ];
+  app.innerHTML = header('architecture') + `<main class="page" style="display:flex;flex-direction:column;gap:18px">
+    <h1 class="display" style="margin:0;font-size:40px">Architecture</h1>
+    <p class="muted" style="margin:0;max-width:900px">K9X Arena is a K9-AIF solution: its router, orchestrator, squads and agents extend the framework’s building blocks, and every model call goes through the framework’s llm_invoke and K9ModelRouter.</p>
+    <div class="results" style="grid-template-columns:minmax(0,1fr) 440px">
+      <section class="panel" style="padding:12px"><a href="/static/architecture.png" target="_blank" rel="noopener"><img src="/static/architecture.png" alt="K9X Arena architecture: Web UI to FastAPI, Engine, ArenaRouter and ArenaOrchestrator; four squads in order; every model call through llm_invoke and K9ModelRouter to the Ollama host; Granite Guardian and k9x_Shield screening; SQLite store." style="width:100%;height:auto;border-radius:10px;display:block"></a></section>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <section class="panel"><h2>How a match runs</h2>${steps.map(([t, d]) => `<div style="margin-bottom:12px"><div style="font-weight:600">${t}</div><div class="muted" style="font-size:13.5px;line-height:1.6">${d}</div></div>`).join('')}</section>
+        <section class="panel teal"><h2>Router vs. arena grading</h2>
+          <table class="grid"><thead><tr><th></th><th>Model router</th><th>Arena grading</th></tr></thead><tbody>
+            <tr><td class="muted">When</td><td>Before each call, at runtime</td><td>After the answers, offline</td></tr>
+            <tr><td class="muted">Question</td><td>Which model should answer?</td><td>How good was each answer?</td></tr>
+            <tr><td class="muted">Output</td><td>One model per request</td><td>Stars, router audit, recommended config</td></tr></tbody></table>
+          <p class="muted" style="font-size:13px;margin:10px 0 0">The router scores each request on its own (capability, sensitivity, latency, cost). It records its decisions but does not learn from them yet; the arena’s recommended config is how evidence feeds back into it.</p></section>
+      </div>
+    </div></main>`;
+}
+
+route();

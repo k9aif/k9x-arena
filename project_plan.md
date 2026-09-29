@@ -1,5 +1,10 @@
 # K9X Arena — Project Plan
 
+**Status (2026-09-28): phases 0–4 built and verified end to end** against a real
+Ollama host (Quick Check suite; screening, forced + router runs, all graders,
+Guardian safety pass, judge, stars, router audit, recommended config, UI).
+See §8 for what's next.
+
 Companion to [SPEC.md](SPEC.md) (what the arena does). This file covers how
 it is configured, what it looks like, how it is built, and in what order.
 
@@ -208,3 +213,21 @@ contenders, a live match, a scoreboard.
    runs would queue on the PowerAI GPU.
 3. **Packaging:** its own PyPI package (`k9x-arena`), or a subcommand of
    `k9x` (`k9x arena`)?
+
+## 8. Built vs. next
+
+**Built (v0.1):** everything in phases 0–4, plus history, the review queue,
+uploads with mandatory Guardian scanning, the Lanes and Orbit live views, and
+an Architecture tab.
+
+**Next:**
+1. **K9X HIL for disputed grades.** Today disagreements go to an in-app review
+   queue; route them through `RequiresHIL` → K9X HIL when Kafka is available.
+2. **A learning router (framework).** K9ModelRouter scores each request on its
+   own and never reads the session history or model affinity it records.
+   Arena results are exactly the evidence a learned routing policy needs —
+   a framework change, proposed separately.
+3. **Live grades during answering.** Deterministic grades are cheap and could
+   appear on lane cards as each answer lands instead of after all answers.
+4. **Packaging:** `pip install k9x-arena` or a `k9x arena` subcommand; container
+   for the PowerAI host.

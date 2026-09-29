@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: Apache-2.0
+# K9X Arena — squad flow definitions (loaded by SquadLoader.load_one).
+# No orchestrator field: squads never reference their caller.
+
+squads:
+  SuiteSquad:
+    description: Load the task suite and screen every prompt with k9x_Shield and Granite Guardian.
+    agents: [SuiteLoaderAgent, InputScreenAgent]
+    flow:
+      - agent: SuiteLoaderAgent
+        result_key: suite
+      - agent: InputScreenAgent
+        result_key: screening
+
+  ContestantSquad:
+    description: Run every task on every contender (grouped by model), then once through the router.
+    agents: [ForcedRunAgent, RouterRunAgent]
+    flow:
+      - agent: ForcedRunAgent
+        result_key: forced
+      - agent: RouterRunAgent
+        result_key: routed
+
+  GradingSquad:
+    description: Deterministic graders, then Guardian's safety pass, then the LLM judge.
+    agents: [CodeGraderAgent, ExtractionGraderAgent, ReasoningGraderAgent, SafetyGraderAgent, JudgeAgent]
+    flow:
+      - agent: CodeGraderAgent
+        result_key: code
+      - agent: ExtractionGraderAgent
+        result_key: extraction
+      - agent: ReasoningGraderAgent
+        result_key: reasoning
+      - agent: SafetyGraderAgent
+        result_key: safety
+      - agent: JudgeAgent
+        result_key: judged
+
+  ReportSquad:
+    description: Stars and leaderboard, router audit, recommended router config.
+    agents: [ScoringAgent, RouterAuditAgent, ConfigRecommenderAgent]
+    flow:
+      - agent: ScoringAgent
+        result_key: scored
+      - agent: RouterAuditAgent
+        result_key: audited
+      - agent: ConfigRecommenderAgent
+        result_key: report

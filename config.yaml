@@ -1,0 +1,65 @@
+# K9X Arena configuration: *how* the arena behaves.
+# *Where* and *which* (Ollama host, model tags, logins) live in .env.
+# ${VAR:-default} is expanded from the environment by the framework's load_yaml.
+
+arena:
+  # Default contenders offered in the Lobby (comma-separated Ollama tags).
+  # Any model pulled on the Ollama host can be picked per match.
+  contestants: "${ARENA_CONTESTANTS:-qwen2.5:7b}"
+  # Judge for open-ended answers. Never allowed to also compete.
+  judge_model: "${ARENA_JUDGE_MODEL:-qwen2.5:7b}"
+  runs_per_task: 3
+  router_mode: true          # also send every task through K9ModelRouter
+  max_tokens: 2048
+  suites_dir: ./suites
+  llm_retries: 2             # llm_invoke attempts per call
+  llm_retry_delay_s: 5
+
+  # The production-style catalog the router audit tests. Router mode sends
+  # the real task type and K9ModelRouter picks one of these two.
+  router_under_test:
+    general:
+      model: "${ARENA_ROUTER_GENERAL_MODEL:-}"
+      capabilities: [general, chat, summarization]
+    reasoning:
+      model: "${ARENA_ROUTER_REASONING_MODEL:-}"
+      capabilities: [reasoning, analysis, extraction]
+
+  sandbox:
+    code_timeout_seconds: 20   # generated code runs only in a subprocess
+
+  scoring:
+    weights:
+      quality: 0.60
+      consistency: 0.15
+      latency: 0.15
+      refusal_accuracy: 0.10
+    stars: {"5": 90, "4": 75, "3": 60, "2": 40}   # below 40 = 1 star
+
+  judging:
+    passes: 2                        # two independent judge passes
+    review_on_disagreement_grades: 1 # passes more than 1 grade apart -> review queue
+
+governance:
+  guardian:
+    enabled: true                    # fixed: the arena always keeps Guardian on
+    model: "${ARENA_GUARDIAN_MODEL:-granite4.1-guardian:8b}"
+    on_unavailable: fail_closed      # fixed
+    timeout: 60
+
+security:
+  shield:
+    enabled: true
+    strict: false
+    ingress:
+      checks:
+        - InputSizeCheck
+        - PromptInjectionCheck
+        - PIIBoundaryCheck
+    egress:
+      checks:
+        - PIIBoundaryCheck
+
+evaluation:
+  provider: k9
+  pass_threshold: 70

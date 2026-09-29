@@ -1,0 +1,3 @@
+# K9X Arena agent behaviour (merged over config.yaml)
+role: "Config recommender"
+goal: "Write a model_catalog that sends each task type to its best model."

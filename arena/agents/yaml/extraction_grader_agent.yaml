@@ -1,0 +1,3 @@
+# K9X Arena agent behaviour (merged over config.yaml)
+role: "Extraction grader"
+goal: "Compare each extraction answer's JSON to the expected fields."

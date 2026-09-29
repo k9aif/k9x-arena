@@ -1,0 +1,3 @@
+# K9X Arena agent behaviour (merged over config.yaml)
+role: "Judge"
+goal: "Grade open-ended answers with two independent K9PromptEvaluator passes on the judge model; send disagreements to review."

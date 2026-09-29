@@ -1,0 +1,100 @@
+@startuml k9x_arena_architecture
+' K9X Arena — architecture (render: PLANTUML_LIMIT_SIZE=8192 plantuml -tpng docs/architecture.puml)
+skinparam backgroundColor #070b14
+skinparam defaultFontName "IBM Plex Sans"
+skinparam defaultFontColor #e6edf5
+skinparam shadowing false
+skinparam roundCorner 12
+skinparam ArrowColor #2dd4bf
+skinparam ArrowFontColor #93a3b8
+skinparam ArrowFontSize 11
+skinparam packageBorderColor #1f4d45
+skinparam packageFontColor #5eead4
+skinparam packageBackgroundColor #0a1020
+skinparam rectangleBorderColor #2b3d4c
+skinparam rectangleBackgroundColor #0d1422
+skinparam databaseBorderColor #4a3d1a
+skinparam databaseBackgroundColor #0d1422
+skinparam nodeBorderColor #4a3d1a
+skinparam nodeBackgroundColor #0a1020
+skinparam nodeFontColor #ffd166
+skinparam actorBorderColor #2dd4bf
+skinparam actorBackgroundColor #0d1422
+skinparam noteBackgroundColor #101f2c
+skinparam noteBorderColor #1f4d45
+skinparam noteFontColor #c8d3e0
+title <color:#e6edf5><size:22><b>K9X Arena — architecture</b></size></color>
+
+actor "Architect" as user
+rectangle "Web UI\nLobby · Live match (Lanes / Orbit)\nResults · Task · History · Reviews" as ui
+
+package "K9X Arena (SBBs on k9-aif)" {
+  rectangle "FastAPI\n/api · SSE stream\nuploads · reviews" as api
+  rectangle "Engine\none match at a time\npause · resume · cancel" as engine
+  rectangle "<b>ArenaRouter</b>\nextends BaseRouter\narena.run · arena.rescore" as router
+  rectangle "<b>ArenaOrchestrator</b>\nextends BaseOrchestrator\nbuilds this match's catalog" as orch
+  rectangle "<b>1 · SuiteSquad</b>\nSuiteLoaderAgent\nInputScreenAgent" as s1
+  rectangle "<b>2 · ContestantSquad</b>\nForcedRunAgent\nRouterRunAgent" as s2
+  rectangle "<b>3 · GradingSquad</b>\nCode · Extraction · Reasoning graders\nSafetyGraderAgent · JudgeAgent" as s3
+  rectangle "<b>4 · ReportSquad</b>\nScoringAgent · RouterAuditAgent\nConfigRecommenderAgent" as s4
+  database "SQLite\nmatches · runs · grades\nstars · audit · reviews" as db
+  rectangle "Code sandbox\nsubprocess · timeout\nCPU / memory limits" as sandbox
+}
+
+package "k9-aif framework (pip install k9-aif)" {
+  rectangle "<b>llm_invoke</b>\nretries · LLMCall trace" as invoke
+  rectangle "<b>K9ModelRouter</b>\ncapability scoring per request\ncontestant_n · judge · general · reasoning" as kmr
+  rectangle "LLMFactory" as llmf
+  rectangle "<b>k9x_Shield</b>\nShieldGovernance" as shield
+  rectangle "<b>Granite Guardian</b>\nGuardianGovernance · fail-closed" as guardian
+  rectangle "K9PromptEvaluator\nLLM judge, A–F" as evaluator
+  rectangle "trace_events bus" as trace
+}
+
+node "Ollama host (GPU)" as ollama {
+  rectangle "Contenders\nqwen3.8 · gemma4 · …" as cont
+  rectangle "Judge\ndeepseek-r1 · …" as judge
+  rectangle "granite4.1-guardian" as gmodel
+}
+
+user --> ui
+ui --> api : REST + SSE
+api --> engine
+engine --> router : arena.run
+router --> orch
+orch --> s1
+orch --> s2
+orch --> s3
+orch --> s4
+s1 ..> shield : screen prompts
+s1 ..> guardian : screen prompts
+api ..> guardian : scan uploads
+s2 --> invoke : task_type = contestant_n\nor the real task type
+s3 --> evaluator
+evaluator --> invoke : task_type = judge
+s3 ..> guardian : safety pass
+s3 --> sandbox : code tests
+invoke --> kmr
+kmr --> llmf
+llmf --> cont
+llmf --> judge
+guardian --> gmodel
+invoke ..> trace
+shield ..> trace
+trace ..> api : live ticker
+s1 --> db
+s2 --> db
+s3 --> db
+s4 --> db
+
+note right of kmr
+  Every model call goes through the router.
+  Forced mode pins a contender by its unique
+  capability; router mode sends the real task
+  type, and the audit checks the router's choice.
+  The router scores each request on its own
+  (capability, sensitivity, latency, cost) and
+  records sessions and decisions; it does not
+  yet learn from them.
+end note
+@enduml

@@ -1,0 +1,3 @@
+# K9X Arena agent behaviour (merged over config.yaml)
+role: "Input screener"
+goal: "Screen every task prompt with k9x_Shield and Granite Guardian before any contender sees it; fail closed if Guardian is unavailable."

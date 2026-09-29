@@ -1,0 +1,7 @@
+k9-aif[s3]>=1.12.10
+fastapi>=0.111
+uvicorn[standard]>=0.30
+python-dotenv>=1.0
+pyyaml>=6.0
+requests>=2.31
+python-multipart>=0.0.9
