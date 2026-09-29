@@ -28,7 +28,7 @@ from k9_aif_abb.k9_governance.guardian_governance import GuardianGovernance
 
 from arena import __version__, engine, live, ollama, scoring, screening, store, suites
 from arena.settings import (ROOT, TASK_TYPES, credentials, default_contestants, judge_model,
-                            load_config, min_params_b, ollama_base_url)
+                            load_config, min_params_b, ollama_base_url, second_judge_model)
 
 WEB = ROOT / "web"
 CONFIG = load_config()
@@ -176,6 +176,7 @@ def models(all: bool = False, u=Depends(user)):
     return {"models": shown, "hidden_small": 0 if all else len(small), "min_params_b": threshold,
             "show_all": all, "default_contestants": default_contestants(CONFIG),
             "default_judge": judge_model(CONFIG), "guardian_model": guardian_model,
+            "second_judge": str(CONFIG["arena"].get("judge_model_2", "")).strip(),
             "runs_per_task": CONFIG["arena"]["runs_per_task"], "router_mode": CONFIG["arena"]["router_mode"]}
 
 
@@ -265,7 +266,8 @@ def create_match(body: NewMatch, u=Depends(user)):
     contenders = list(dict.fromkeys(c.strip() for c in body.contenders if c.strip()))
     if body.judge in contenders:
         raise HTTPException(400, "the judge cannot also be a contender")
-    pulled = {m["tag"] for m in ollama.list_models()}
+    pulled_models = ollama.list_models()
+    pulled = {m["tag"] for m in pulled_models}
     missing = [t for t in contenders + [body.judge] if t not in pulled]
     if missing:
         raise HTTPException(400, f"not pulled on the Ollama host: {', '.join(missing)}")
@@ -275,9 +277,14 @@ def create_match(body: NewMatch, u=Depends(user)):
         suite, tasks = suites.load_suite(body.suite)
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(400, str(exc))
+    judge_2 = second_judge_model(CONFIG, contenders)
+    if judge_2 and judge_2 not in pulled:
+        judge_2 = ""
+    families = {m["tag"]: m["family"] for m in pulled_models if m["tag"] in set(contenders) | {body.judge, judge_2}}
     match_id = store.create_match(body.suite, suite.get("name", body.suite), contenders, body.judge,
                                   body.runs_per_task, body.router_mode,
-                                  {"tasks": len(tasks), "by": u["username"]})
+                                  {"tasks": len(tasks), "by": u["username"], "judge_2": judge_2,
+                                   "families": families})
     engine.start(match_id)
     return {"id": match_id}
 

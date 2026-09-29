@@ -344,3 +344,24 @@ def test_verdict_clear_speed_and_draw():
     v = scoring.verdict([b("a", 100, 100), b("b", 100, 89), b("c", 91, 85)])
     assert v["kind"] == "speed" and v["tied"] == ["a", "b"]
     assert scoring.verdict([b("a", 100, 95), b("b", 99, 94)])["kind"] == "draw"
+
+
+def test_judge_reliability_flags_lenient_judge():
+    lenient = scoring.judge_reliability([{"score": 85}, {"score": 90}], [100, 95, 98])
+    assert lenient["checked"] and lenient["reliable"] is False
+    fair = scoring.judge_reliability([{"score": 20}, {"score": 30}], [90, 85])
+    assert fair["reliable"] is True
+    assert scoring.judge_reliability([], [90])["checked"] is False
+
+
+def test_second_judge_entry_and_think_stripping():
+    from arena.agents.grading_agents import judged_text
+    from arena.settings import build_inference_config, load_config
+    cfg = load_config()
+    m = build_inference_config(cfg, ["a:1"], "j:1")
+    assert m["inference"]["model_catalog"]["models"]["judge_b"]["capabilities"] == ["judge_b"]
+    assert m["inference"]["llm_factory"]["models"]["judge_b"]["temperature"] > 0  # resampled when no judge 2
+    cfg["arena"]["judge_model_2"] = "k:2"
+    m2 = build_inference_config(cfg, ["a:1"], "j:1")
+    assert m2["inference"]["llm_factory"]["models"]["judge_b"]["model"] == "k:2"
+    assert judged_text("<think>long reasoning</think>Final answer.") == "Final answer."

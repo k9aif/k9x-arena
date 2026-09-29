@@ -255,5 +255,19 @@ def verdict(board: List[Dict[str, Any]], margin: float = 2.0) -> Dict[str, Any]:
     return {"kind": kind, "tied": [b["model"] for b in tied]}
 
 
+def judge_reliability(calibration: List[Dict[str, Any]], judged_scores: List[float],
+                      max_planted: float = 50.0, min_gap: float = 20.0) -> Dict[str, Any]:
+    """A fair judge scores planted poor answers low and real answers clearly
+    higher. Unreliable when planted answers average above `max_planted`, or
+    real answers are not at least `min_gap` points above them."""
+    if not calibration:
+        return {"checked": False}
+    planted = sum(c["score"] for c in calibration) / len(calibration)
+    real = sum(judged_scores) / len(judged_scores) if judged_scores else None
+    reliable = planted <= max_planted and (real is None or real - planted >= min_gap)
+    return {"checked": True, "planted_avg": round(planted, 1),
+            "real_avg": round(real, 1) if real is not None else None, "reliable": reliable}
+
+
 def overall_winner(board: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     return board[0] if board else None

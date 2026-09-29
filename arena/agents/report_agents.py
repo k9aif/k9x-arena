@@ -31,9 +31,18 @@ class ScoringAgent(ArenaAgent):
         board = scoring.leaderboard(rows, _thresholds(self.config))
         judged = [s for s in scores.values() if s["source"] in ("judge", "review")]
         reviews = store.list_reviews(match_id)
+        match = store.get_match(match_id)
+        families = (match.get("settings") or {}).get("families", {})
+        judges = [match["judge"]] + ([match["settings"].get("judge_2")] if match["settings"].get("judge_2") else [])
+        shared = sorted({families.get(c) for c in match["contenders"]}
+                        & {families.get(j) for j in judges} - {None, ""})
         return {"rows": rows, "leaderboard": board,
                 "judge": {"judged": len(judged), "disagreements": len(reviews),
-                          "pending": sum(1 for r in reviews if r["status"] == "pending")}}
+                          "pending": sum(1 for r in reviews if r["status"] == "pending"),
+                          "second_judge": match["settings"].get("judge_2") or None,
+                          "shared_family": shared,
+                          **scoring.judge_reliability(store.get_calibration(match_id),
+                                                      [s["score"] for s in judged])}}
 
 
 class RouterAuditAgent(ArenaAgent):

@@ -128,6 +128,7 @@ async function renderLobby() {
     suite: prev.suite || (suites[0] && suites[0].key) || '',
     runs: prev.runs || models.runs_per_task, routerMode: prev.routerMode ?? models.router_mode,
     upload: prev.upload || null, error: null, busy: false, sizeNote,
+    secondJudge: models.second_judge || '',
   };
   drawLobby();
 }
@@ -173,6 +174,7 @@ function drawLobby() {
         <label class="field">Judge (not a contender)<select data-act="judge">${L.models.map((m) => `<option ${m.tag === L.judge ? 'selected' : ''}>${esc(m.tag)}</option>`).join('')}</select></label>
         <label class="field">Runs per task<select data-act="runs">${[1, 2, 3, 4, 5].map((n) => `<option ${n === L.runs ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
       </div>
+      ${judgeNote(L, selected)}
       <label class="field">Task suite<select data-act="suite">${L.suites.map((s) => `<option value="${esc(s.key)}" ${s.key === L.suite ? 'selected' : ''}>${esc(s.name)} · ${s.tasks} tasks · ${s.source}</option>`).join('')}</select></label>
       <div class="upload">
         <div class="row"><div style="flex-grow:1"><div style="font-size:14px;font-weight:600">Or upload your own</div><div class="muted" style="font-size:12px">Task suite (.yaml) or source document (.md, .txt) · scanned by Granite Guardian</div></div>
@@ -186,6 +188,14 @@ function drawLobby() {
       <button class="btn primary" style="height:52px;font-size:17px;justify-content:center" data-act="start" ${!selected.length || !L.suite || L.busy || guardianOff ? 'disabled' : ''}>${L.busy ? 'Starting…' : 'Start match'}</button>
     </aside></div></main>`;
 }
+function judgeNote(L, selected) {
+  const fam = (tag) => (L.models.find((m) => m.tag === tag) || {}).family;
+  const jf = fam(L.judge);
+  const clash = jf ? selected.filter((t) => fam(t) === jf) : [];
+  const second = L.secondJudge && !selected.includes(L.secondJudge) ? `second opinion from <span class="mono">${esc(L.secondJudge)}</span>` : 'second pass resamples the same judge';
+  return `<div class="muted" style="font-size:12.5px;line-height:1.5">Judging is anonymized and calibrated; ${second}.${clash.length ? `<br><span style="color:var(--amber)">Fairness: the judge is the same model family (${esc(jf)}) as ${clash.map(esc).join(', ')}. A judge from another family is fairer.</span>` : ''}</div>`;
+}
+
 function statusBadge(s) {
   const map = { completed: 'teal', running: 'amber', queued: 'grey', paused: 'grey', failed: 'red' };
   return `<span class="badge ${map[s] || 'grey'}">${esc(s)}</span>`;
@@ -400,12 +410,15 @@ async function renderResults(id) {
     <div class="row" style="align-items:flex-end"><div class="grow"><h1 class="display" style="margin:0;font-size:34px">Match #${id} · ${esc(m.suite_name)}</h1>
       <div class="muted" style="font-size:14px">${m.contenders.length} contenders · ${D.tasks.length} tasks · ${m.runs_per_task} runs · judge <span class="mono">${esc(m.judge)}</span> · ${dur(m.finished_at && m.started_at ? m.finished_at - m.started_at : 0)}</div></div>
       ${R.leaderboard && R.leaderboard.length ? '<button class="btn" data-act="celebrate">Celebrate again</button>' : ''}<a class="btn" href="#/match/${id}">Replay view</a><a class="btn primary" href="#/lobby">Rematch</a></div>
+    ${J.checked && !J.reliable ? `<div class="banner info" style="margin-top:14px">The judge gave deliberately poor answers an average of ${J.planted_avg}, so its summary and chat grades don't separate the models reliably. Rank on code, extraction, reasoning and adversarial, or use a stricter judge (ARENA_JUDGE_MODEL / ARENA_JUDGE_MODEL_2).</div>` : ''}
+    ${J.shared_family && J.shared_family.length ? `<div class="banner info" style="margin-top:14px">Fairness note: the judge shares a model family (${esc(J.shared_family.join(', '))}) with a contender, which can favour that contender's style.</div>` : ''}
     ${J.pending ? `<div class="banner info" style="margin-top:14px">${J.pending} judged answers await review, so these results are provisional. <a href="#/reviews">Review them</a>.</div>` : ''}
     <section class="kpis" aria-label="Summary">
       ${verdictTile(R)}
       <div class="kpi"><div class="muted" style="font-size:13px">Router picked the best model</div><div class="v"><span class="big">${RT.types ? `${RT.matches} of ${RT.types}` : '—'}</span><span class="muted">task types</span></div></div>
       <div class="kpi"><div class="muted" style="font-size:13px">Router regret</div><div class="v"><span class="big">${RT.avg_regret ?? '—'}</span><span class="muted">points lost on average</span></div></div>
-      <div class="kpi"><div class="muted" style="font-size:13px">Judge disagreement</div><div class="v"><span class="big">${J.disagreements ?? 0} of ${J.judged ?? 0}</span><span class="muted">sent to review</span></div></div>
+      <div class="kpi"><div class="muted" style="font-size:13px">Judge disagreement</div><div class="v"><span class="big">${J.disagreements ?? 0} of ${J.judged ?? 0}</span><span class="muted">sent to review</span></div>
+        ${J.checked ? `<div style="font-size:12px;margin-top:2px;color:${J.reliable ? 'var(--teal-2)' : 'var(--amber)'}">Calibration: planted poor answers scored ${J.planted_avg} ${J.reliable ? '· judge discriminates' : '· judge too lenient'}</div>` : ''}</div>
     </section>
     <div class="results">
       <div style="display:flex;flex-direction:column;gap:16px;min-width:0">

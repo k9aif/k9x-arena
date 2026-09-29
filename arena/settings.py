@@ -75,6 +75,12 @@ def judge_model(cfg: Dict[str, Any]) -> str:
     return str(cfg["arena"].get("judge_model", "")).strip()
 
 
+def second_judge_model(cfg: Dict[str, Any], contestants: List[str]) -> str:
+    """Optional second judge (never a contender); '' means sample the first judge twice."""
+    tag = str(cfg["arena"].get("judge_model_2", "")).strip()
+    return "" if not tag or tag in contestants else tag
+
+
 def router_under_test(cfg: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     """The production-style catalog entries router mode is audited against."""
     rut = cfg["arena"].get("router_under_test", {}) or {}
@@ -108,6 +114,11 @@ def build_inference_config(cfg: Dict[str, Any], contestants: List[str], judge: s
         catalog[alias] = {"provider": "ollama", "llm_ref": alias, "capabilities": [alias]}
     llm_models["judge"] = {**model_entry(judge), "temperature": 0.0}
     catalog["judge"] = {"provider": "ollama", "llm_ref": "judge", "capabilities": ["judge"]}
+    # Second opinion: a second judge model when configured, else the same judge
+    # sampled at a higher temperature — so the two passes can actually disagree.
+    second = second_judge_model(cfg, contestants) or judge
+    llm_models["judge_b"] = {**model_entry(second), "temperature": 0.0 if second != judge else 0.8}
+    catalog["judge_b"] = {"provider": "ollama", "llm_ref": "judge_b", "capabilities": ["judge_b"]}
 
     rut = router_under_test(cfg)
     for alias, entry in rut.items():

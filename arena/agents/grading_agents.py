@@ -6,6 +6,7 @@ open-ended answers — each phase batched so the GPU swaps models once."""
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 
 from k9_aif_abb.k9_factories.evaluation_factory import EvaluationFactory
@@ -92,11 +93,30 @@ class SafetyGraderAgent(ArenaAgent):
         return {"graded": len(pending)}
 
 
+_THINK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+# Deliberately poor answers the judge must score LOW (calibration).
+PLANTED = {
+    "summarization": "This document is about insurance and contains some information.",
+    "chat": "Please check your policy documents or contact us.",
+}
+
+
+def judged_text(output: str) -> str:
+    """Hidden reasoning is removed so a model is neither rewarded nor penalised for it."""
+    return _THINK.sub("", output or "").strip()
+
+
 class JudgeAgent(ArenaAgent):
-    """Two independent passes of the framework's K9PromptEvaluator (LLM-as-
-    judge, A–F), routed to the `judge` catalog entry — never a contender.
-    Answers are judged without the model's name. Passes more than
-    `review_on_disagreement_grades` apart go to the review queue."""
+    """Fair judging for open-ended answers, with the framework's
+    K9PromptEvaluator (A–F):
+      - anonymized: the judge never sees which model wrote an answer;
+      - independent: pass 1 uses the `judge` entry, pass 2 the `judge_b`
+        entry (a second judge model, or the same judge resampled), so the
+        passes can genuinely disagree; disagreements go to review;
+      - calibrated: per task the judge also grades a planted poor answer,
+        and Results warns when it failed to score those low;
+      - hidden <think> reasoning is stripped before judging."""
 
     layer = "K9X Arena JudgeAgent SBB"
 
@@ -104,9 +124,10 @@ class JudgeAgent(ArenaAgent):
         match_id = payload["match_id"]
         store.update_match(match_id, phase="judging")
         judging = self.config.get("arena", {}).get("judging", {})
-        passes = max(1, int(judging.get("passes", 2)))
+        passes = max(1, min(2, int(judging.get("passes", 2))))
         tolerance = int(judging.get("review_on_disagreement_grades", 1))
-        evaluator = EvaluationFactory.create({**self.config, "judge_model": "judge"})
+        evaluators = [EvaluationFactory.create({**self.config, "judge_model": "judge"}),
+                      EvaluationFactory.create({**self.config, "judge_model": "judge_b"})]
         pending = list(_ungraded(match_id, ["summarization", "chat"],
                                  [f"judge_{p}" for p in range(1, passes + 1)]))
         disagreements = 0
@@ -116,11 +137,12 @@ class JudgeAgent(ArenaAgent):
             live.set_current({"model": "judge", "task_id": task["id"], "title": task.get("title", ""),
                               "type": task["type"], "run_no": run["run_no"]})
             expected = task.get("reference") or task.get("rubric") or ""
+            answer = judged_text(run["output"])
             results = []
             for p in range(1, passes + 1):
                 try:
-                    res = evaluator.evaluate(prompt=task["prompt"], input_data={}, actual_output=run["output"],
-                                             expected=expected, test_case_description=task.get("title", ""))
+                    res = evaluators[p - 1].evaluate(prompt=task["prompt"], input_data={}, actual_output=answer,
+                                                     expected=expected, test_case_description=task.get("title", ""))
                 except RuntimeError as exc:
                     live.emit("Error", f"judge failed on {task['id']}: {str(exc)[:120]}")
                     break
@@ -133,6 +155,27 @@ class JudgeAgent(ArenaAgent):
                 store.add_review(match_id, run["id"],
                                  f"judges disagree: {results[0].grade} vs {results[1].grade}")
                 live.emit("Review", f"{task['id']} · judges disagree ({results[0].grade} vs {results[1].grade})")
+        calibrated = self._calibrate(match_id, evaluators[0]) if judging.get("calibration", True) else 0
         live.set_progress("judging", len(pending), len(pending))
         live.set_current(None)
-        return {"judged": len(pending), "disagreements": disagreements}
+        return {"judged": len(pending), "disagreements": disagreements, "calibrated": calibrated}
+
+    def _calibrate(self, match_id: int, evaluator) -> int:
+        done = {c["task_id"] for c in store.get_calibration(match_id)}
+        tasks = [t for t in store.get_tasks(match_id)
+                 if t["type"] in PLANTED and t["id"] not in done and not (t.get("screen") or {}).get("excluded")]
+        for task in tasks:
+            live.checkpoint()
+            planted = PLANTED[task["type"]]
+            try:
+                res = evaluator.evaluate(prompt=task["prompt"], input_data={}, actual_output=planted,
+                                         expected=task.get("reference") or task.get("rubric") or "",
+                                         test_case_description=task.get("title", ""))
+            except RuntimeError:
+                continue
+            store.save_calibration(match_id, task["id"], planted, res.score, res.grade)
+        if tasks:
+            cal = store.get_calibration(match_id)
+            avg = sum(c["score"] for c in cal) / len(cal)
+            live.emit("Judge", f"calibration · planted poor answers scored {avg:.0f} on average")
+        return len(tasks)

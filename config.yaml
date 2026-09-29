@@ -8,6 +8,9 @@ arena:
   contestants: "${ARENA_CONTESTANTS:-qwen2.5:7b}"
   # Judge for open-ended answers. Never allowed to also compete.
   judge_model: "${ARENA_JUDGE_MODEL:-qwen2.5:7b}"
+  # Optional second judge for pass 2 (a different model is the fairest check).
+  # Empty: pass 2 samples the first judge again at a higher temperature.
+  judge_model_2: "${ARENA_JUDGE_MODEL_2:-}"
   runs_per_task: 3
   # Lobby lists only models with at least this many billion parameters
   # (ARENA_MIN_PARAMS_B in .env overrides). "Show smaller models" reveals the rest.
@@ -41,7 +44,8 @@ arena:
     tie_margin: 2.0            # quality points within which top models count as tied
 
   judging:
-    passes: 2                        # two independent judge passes
+    passes: 2                        # pass 1: judge; pass 2: second judge (or resampled)
+    calibration: true                # judge also grades a planted poor answer per task
     review_on_disagreement_grades: 1 # passes more than 1 grade apart -> review queue
 
 governance:

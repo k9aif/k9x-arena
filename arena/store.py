@@ -115,6 +115,14 @@ CREATE TABLE IF NOT EXISTS reviews (
   created_at REAL NOT NULL,
   decided_at REAL
 );
+CREATE TABLE IF NOT EXISTS judge_calibration (
+  match_id INTEGER NOT NULL,
+  task_id TEXT NOT NULL,
+  planted TEXT NOT NULL,
+  score REAL NOT NULL,
+  grade TEXT,
+  PRIMARY KEY (match_id, task_id)
+);
 CREATE TABLE IF NOT EXISTS screen_cache (
   key TEXT PRIMARY KEY,              -- sha256(guardian model + prompt)
   screen TEXT NOT NULL,              -- JSON verdicts
@@ -200,7 +208,7 @@ def delete_match(match_id: int) -> None:
         if run_ids:
             q = ",".join("?" * len(run_ids))
             c.execute(f"DELETE FROM grades WHERE run_id IN ({q})", run_ids)
-        for table in ("runs", "tasks", "stars", "router_audit", "reports", "reviews", "events"):
+        for table in ("runs", "tasks", "stars", "router_audit", "reports", "reviews", "events", "judge_calibration"):
             c.execute(f"DELETE FROM {table} WHERE match_id=?", (match_id,))
         c.execute("DELETE FROM matches WHERE id=?", (match_id,))
 
@@ -366,6 +374,18 @@ def decide_review(review_id: int, score: float, by: str) -> Optional[Dict[str, A
         c.execute("UPDATE reviews SET status='decided', decided_score=?, decided_by=?, decided_at=? WHERE id=?",
                   (float(score), by, time.time(), review_id))
         return dict(r)
+
+
+# ── judge calibration (planted poor answers) ─────────────────────────────
+def save_calibration(match_id: int, task_id: str, planted: str, score: float, grade: str) -> None:
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO judge_calibration VALUES (?,?,?,?,?)",
+                  (match_id, task_id, planted, float(score), grade))
+
+
+def get_calibration(match_id: int) -> List[Dict[str, Any]]:
+    with conn() as c:
+        return _rows(c.execute("SELECT * FROM judge_calibration WHERE match_id=?", (match_id,)))
 
 
 # ── screening cache (a prompt is screened once per Guardian model) ─────────
