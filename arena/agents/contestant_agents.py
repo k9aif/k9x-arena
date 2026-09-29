@@ -15,9 +15,24 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from arena import live, store
+from arena import graders, live, store
 from arena.agents.common import ArenaAgent, contestant_prompt
 from arena.graders import is_refusal
+
+# Graded the moment an answer lands (no GPU needed), so live lanes show
+# scores during the match. Judged and safety-graded types wait for their
+# batched phases so the GPU doesn't swap models mid-contest.
+_INSTANT = {"code", "extraction", "reasoning"}
+
+
+def grade_now(run_id: int, task: Dict[str, Any], output: str, timeout: int) -> None:
+    if task["type"] == "code":
+        score, detail = graders.grade_code(output, task["tests"], timeout=timeout)
+    elif task["type"] == "extraction":
+        score, detail = graders.grade_extraction(output, task["expected"])
+    else:
+        score, detail = graders.grade_reasoning(output, str(task["answer"]), task.get("aliases"))
+    store.save_grade(run_id, task["type"], score, detail=detail)
 from arena.settings import alias_for, model_for_alias
 
 
@@ -34,6 +49,7 @@ class ForcedRunAgent(ArenaAgent):
         store.update_match(match_id, phase="answering")
         tasks = _active_tasks(match_id)
         runs = match["runs_per_task"]
+        timeout = int(self.config.get("arena", {}).get("sandbox", {}).get("code_timeout_seconds", 20))
         total = len(match["contenders"]) * len(tasks) * runs
         done = len(store.get_runs(match_id, "forced"))
         previous_model = None
@@ -59,8 +75,10 @@ class ForcedRunAgent(ArenaAgent):
                             output, _, latency = self.ask(prompt, task_type=alias)
                         except RuntimeError as exc:
                             error = str(exc)[:500]
-                    store.save_run(match_id, "forced", model, alias, task["id"], run_no,
-                                   output, latency, is_refusal(output), error)
+                    run_id = store.save_run(match_id, "forced", model, alias, task["id"], run_no,
+                                            output, latency, is_refusal(output), error)
+                    if not error and task["type"] in _INSTANT:
+                        grade_now(run_id, task, output, timeout)
                     done += 1
                     live.set_progress("answering", done, total)
                     live.emit("Answer" if not error else "Error",

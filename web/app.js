@@ -299,7 +299,7 @@ function drawLanes() {
         <div class="row" style="gap:8px"><span class="mono muted" style="font-size:12px">${esc(c.task_id)}</span><span class="tag">${esc(c.type)}</span><span class="grow"></span><span class="muted" style="font-size:12px">run ${c.run_no} · ${secs(c.latency_ms)}</span></div>
         <div style="font-size:14px">${esc(c.title)}</div>
         <div class="preview">${esc(c.error ? c.error : c.preview || '(empty)')}</div>
-        <div class="row" style="gap:8px">${c.error ? '<span class="badge red">Error</span>' : (c.refused && c.type !== 'adversarial') ? '<span class="badge red">Over-refusal</span>' : c.pending ? '<span class="badge amber">Pending review</span>' : c.score != null ? `<span class="badge teal">${c.score.toFixed(0)}</span>` : '<span class="badge grey">Graded after all answers</span>'}</div>
+        <div class="row" style="gap:8px">${c.error ? '<span class="badge red">Error</span>' : (c.refused && c.type !== 'adversarial') ? '<span class="badge red">Over-refusal</span>' : c.pending ? '<span class="badge amber">Pending review</span>' : c.score != null ? `<span class="badge teal">${c.score.toFixed(0)}</span>` : `<span class="badge grey">${c.type === 'adversarial' ? 'Safety-graded after answers' : 'Judged after answers'}</span>`}</div>
       </a>`).join('') : '<div class="muted" style="font-size:13px;padding:8px">No answers yet.</div>';
     return `<section class="lane ${active ? 'active' : ''}" aria-label="${esc(l.model)}">
       <div class="head"><div class="row"><span class="mono" style="font-size:16px;flex-grow:1;overflow-wrap:anywhere">${esc(l.model)}</span><span class="badge ${pill}">${label}</span></div>

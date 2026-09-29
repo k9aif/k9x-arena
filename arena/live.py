@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 from k9_aif_abb.k9_utils.trace_events import register_trace_callback
 
 from arena import store
+from arena.settings import TASK_TYPES
 
 _lock = threading.RLock()
 _state: Dict[str, Any] = {"match_id": None, "pause": False, "cancel": False, "progress": {}, "current": None}
@@ -79,6 +80,10 @@ def _on_trace(event: Dict[str, Any]) -> None:
     etype = event.get("type", "")
     if etype == "LLMCall":
         tt = str(event.get("task_type", ""))
+        # Contender and router-mode calls already get an "Answer" / "Router"
+        # line from their agents; only judge and Guardian calls add information.
+        if tt.startswith("contestant_") or tt in TASK_TYPES:
+            return
         kind = "Guardian" if tt.startswith("guardian") else "LLMCall"
         verdict = f" · {event['verdict'].lower()}" if event.get("verdict") else ""
         secs = (event.get("latency_ms") or 0) / 1000.0

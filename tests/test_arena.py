@@ -250,3 +250,32 @@ def test_params_parsing_and_min_size_default():
     assert params_billions("560M") == 0.56
     assert params_billions("") is None
     assert min_params_b({"arena": {"min_contender_params_b": 10}}) == 10.0
+
+
+def test_guardian_screens_each_prompt_once_across_matches(monkeypatch):
+    from arena import store
+    from arena.agents import suite_agents
+    from arena.settings import load_config
+
+    calls = []
+
+    class FakeGuardian:
+        def __init__(self, config=None):
+            pass
+
+        def pre_process(self, payload, ctx=None):
+            calls.append(payload["query"])
+            return payload
+
+    monkeypatch.setattr(suite_agents, "GuardianGovernance", FakeGuardian)
+    store.init()
+    agent = suite_agents.InputScreenAgent(config=load_config())
+    tasks = [{"id": "T1", "type": "chat", "title": "t", "prompt": "Explain deductibles.", "rubric": "r"},
+             {"id": "T2", "type": "chat", "title": "t", "prompt": "Explain premiums.", "rubric": "r"}]
+    for _ in range(2):
+        mid = store.create_match("built-in:x", "x", ["m1"], "j1", 1, False, {})
+        store.save_tasks(mid, tasks)
+        result = agent.execute({"match_id": mid})
+    assert len(calls) == 2, "second match must reuse cached verdicts"
+    assert result["cached"] == 2
+    assert all(t["screen"]["cached"] for t in store.get_tasks(mid))

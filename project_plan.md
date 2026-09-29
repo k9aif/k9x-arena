@@ -227,7 +227,7 @@ an Architecture tab.
    own and never reads the session history or model affinity it records.
    Arena results are exactly the evidence a learned routing policy needs —
    a framework change, proposed separately.
-3. **Live grades during answering.** Deterministic grades are cheap and could
-   appear on lane cards as each answer lands instead of after all answers.
+3. ~~Live grades during answering~~ — done: code, extraction and reasoning
+   are graded as each answer lands.
 4. **Packaging:** `pip install k9x-arena` or a `k9x arena` subcommand; container
    for the PowerAI host.

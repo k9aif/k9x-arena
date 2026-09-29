@@ -115,6 +115,11 @@ CREATE TABLE IF NOT EXISTS reviews (
   created_at REAL NOT NULL,
   decided_at REAL
 );
+CREATE TABLE IF NOT EXISTS screen_cache (
+  key TEXT PRIMARY KEY,              -- sha256(guardian model + prompt)
+  screen TEXT NOT NULL,              -- JSON verdicts
+  created_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   match_id INTEGER NOT NULL,
@@ -361,6 +366,18 @@ def decide_review(review_id: int, score: float, by: str) -> Optional[Dict[str, A
         c.execute("UPDATE reviews SET status='decided', decided_score=?, decided_by=?, decided_at=? WHERE id=?",
                   (float(score), by, time.time(), review_id))
         return dict(r)
+
+
+# ── screening cache (a prompt is screened once per Guardian model) ─────────
+def get_cached_screen(key: str) -> Optional[Dict[str, Any]]:
+    with conn() as c:
+        r = c.execute("SELECT screen FROM screen_cache WHERE key=?", (key,)).fetchone()
+    return json.loads(r["screen"]) if r else None
+
+
+def put_cached_screen(key: str, screen: Dict[str, Any]) -> None:
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO screen_cache VALUES (?,?,?)", (key, json.dumps(screen), time.time()))
 
 
 # ── events ──────────────────────────────────────────────────────────────────
