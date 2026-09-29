@@ -93,6 +93,10 @@ def check(tags_timeout: float = 5.0, guardian_timeout: float = 90.0) -> List[Tup
 def main() -> int:
     marks = {OK: "  ✓", WARN: "  !", FAIL: "  ✕"}
     print("K9X Arena pre-flight check")
+    from arena.settings import showcase_mode
+    if showcase_mode():
+        print("  ✓ Public mode (ARENA_MODE=public): read-only, no Ollama or Guardian needed.")
+        return 0
     results = check()
     for level, msg in results:
         print(f"{marks[level]} {msg}")

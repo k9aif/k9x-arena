@@ -610,3 +610,51 @@ def test_scoring_agent_flags_offloaded_contender(monkeypatch):
     assert out["fairness"]["latency_scored"] is False
     assert out["fairness"]["offloaded"] == [{"model": "b", "cpu_pct": 30}]
     assert {r["score"] for r in out["rows"]} == {100.0}
+
+
+# ── showcase (public, read-only) ──────────────────────────────────────────────
+def test_showcase_refuses_every_write_and_needs_no_login(client, monkeypatch):
+    import arena.api as api_mod
+    monkeypatch.setattr(api_mod, "SHOWCASE", True)
+    called = []
+    monkeypatch.setattr(api_mod.ollama, "reachable", lambda *a, **k: called.append("ollama") or True)
+    monkeypatch.setattr(api_mod, "_guardian_live", lambda: called.append("guardian") or {"live": True})
+    client.cookies.clear()
+    me = client.get("/api/me").json()
+    assert me["role"] == "viewer" and me["mode"] == "showcase"            # no login
+    assert client.get("/api/matches").status_code == 200
+    assert client.get("/api/status").json()["mode"] == "showcase"
+    assert client.get("/api/login-hints").json() == []
+    assert called == []                                                      # never touches Ollama/Guardian
+    for method, path in [("post", "/api/matches"), ("post", "/api/uploads"), ("post", "/api/matches/1/rescore"),
+                         ("post", "/api/matches/1/pause"), ("post", "/api/matches/1/resume"),
+                         ("delete", "/api/matches/1"), ("post", "/api/reviews/1")]:
+        r = client.delete(path) if method == "delete" else client.post(path, json={})
+        assert r.status_code == 403 and "read-only" in r.json()["detail"], (method, path)
+    assert client.get("/api/models").status_code == 404
+
+
+def test_publish_copies_only_chosen_completed_matches(tmp_path):
+    import sqlite3
+    from arena import publish, store
+    from arena.settings import db_path
+    lab = str(db_path())
+    done = store.create_match("built-in:x", "Published", ["a", "b"], "j", 1, False, {})
+    store.save_tasks(done, [{"id": "C1", "type": "code", "title": "t", "prompt": "p"}])
+    rid = store.save_run(done, "forced", "a", "x", "C1", 1, "out", 100, False, None)
+    store.save_grade(rid, "code", 100)
+    store.save_report(done, {"leaderboard": []})
+    store.update_match(done, status="completed")
+    private = store.create_match("built-in:x", "Private", ["a"], "j", 1, False, {})
+    store.update_match(private, status="completed")
+    running = store.create_match("built-in:x", "Running", ["a"], "j", 1, False, {})
+    out = str(tmp_path / "showcase.db")
+    lines = publish.publish(lab, out, [done, running])
+    os.environ["ARENA_DB_PATH"] = lab                                       # restore for later tests
+    assert any("published (1 answers, 1 grades)" in l for l in lines)
+    assert any("only completed" in l for l in lines)
+    con = sqlite3.connect(out)
+    assert [r[0] for r in con.execute("SELECT suite_name FROM matches")] == ["Published"]
+    assert con.execute("SELECT COUNT(*) FROM grades").fetchone()[0] == 1
+    assert publish.publish(lab, out, [done]) and con.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 1  # idempotent
+    os.environ["ARENA_DB_PATH"] = lab

@@ -20,29 +20,44 @@ from typing import Any, Dict, List, Optional
 import requests
 import yaml
 from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile
-from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from k9_aif_abb.k9_governance.guardian_governance import GuardianGovernance
 
 from arena import __version__, engine, live, ollama, scoring, screening, store, suites
-from arena.settings import (ROOT, TASK_TYPES, credentials, default_contestants, judge_model,
-                            load_config, min_params_b, ollama_base_url, router_under_test, second_judge_model)
+from arena.settings import (REPO_URL, ROOT, TASK_TYPES, credentials, default_contestants, judge_model,
+                            load_config, min_params_b, ollama_base_url, router_under_test, second_judge_model,
+                            showcase_mode)
 
 WEB = ROOT / "web"
 CONFIG = load_config()
+SHOWCASE = showcase_mode()
+_READ_ONLY = ("This is the read-only K9X Arena showcase. Run it yourself to start matches: " + REPO_URL)
 
 
 @asynccontextmanager
 async def _lifespan(_app):
     store.init()
-    engine.recover_after_restart()
+    if not SHOWCASE:
+        engine.recover_after_restart()
     yield
 
 
 app = FastAPI(title="K9X Arena", version=__version__, lifespan=_lifespan)
 _sessions: Dict[str, Dict[str, str]] = {}
+
+
+@app.middleware("http")
+async def _showcase_is_read_only(request: Request, call_next):
+    """The public showcase refuses every write at the server, not just in
+    the UI: no matches, uploads, reruns, reviews or deletes -- and so no
+    route to the GPU. (Login/logout are harmless and kept for the UI.)"""
+    if SHOWCASE and request.method not in ("GET", "HEAD", "OPTIONS") \
+            and request.url.path not in ("/api/login", "/api/logout"):
+        return JSONResponse({"detail": _READ_ONLY}, status_code=403)
+    return await call_next(request)
 _guardian_cache: Dict[str, Any] = {"at": 0.0, "live": None, "detail": ""}
 
 
@@ -53,6 +68,8 @@ class Login(BaseModel):
 
 
 def user(request: Request) -> Dict[str, str]:
+    if SHOWCASE:
+        return {"username": "guest", "role": "viewer"}
     token = request.cookies.get("arena_session", "")
     u = _sessions.get(token)
     if not u:
@@ -86,13 +103,15 @@ def logout(request: Request, response: Response):
 
 @app.get("/api/me")
 def me(u: Dict[str, str] = Depends(user)):
-    return u
+    return {**u, "mode": "showcase" if SHOWCASE else "lab", "repo_url": REPO_URL}
 
 
 @app.get("/api/login-hints")
 def login_hints():
     """Shown on the sign-in page of this beta: the demo login and, when
     configured, the admin login, clearly labeled."""
+    if SHOWCASE:
+        return []
     creds = credentials()
     order = {"demo": 0, "admin": 1}
     return [{"label": c["role"].title(), "username": n, "password": c["password"]}
@@ -118,11 +137,13 @@ def _guardian_live() -> Dict[str, Any]:
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": __version__}
+    return {"ok": True, "version": __version__, "mode": "showcase" if SHOWCASE else "lab"}
 
 
 @app.get("/api/status")
 def status(u=Depends(user)):
+    if SHOWCASE:  # never touch Ollama from the public instance
+        return {"mode": "showcase", "running_match": None, "version": __version__, "repo_url": REPO_URL}
     g = _guardian_live()
     return {
         "ollama": {"reachable": ollama.reachable(), "url": ollama_base_url()},
@@ -137,6 +158,8 @@ def status(u=Depends(user)):
 # ── models & suites ─────────────────────────────────────────────────────────
 @app.get("/api/models")
 def models(all: bool = False, u=Depends(user)):
+    if SHOWCASE:  # the showcase has no Ollama host to list
+        raise HTTPException(404, _READ_ONLY)
     try:
         pulled = ollama.list_models()
     except Exception as exc:

@@ -59,3 +59,10 @@ docs/architecture.puml
 - Regenerate the detailed diagram with
   `PLANTUML_LIMIT_SIZE=8192 plantuml -tpng -Sdpi=160 docs/architecture.puml -o ../web`
   then rename `web/k9x_arena_architecture.png` to `web/architecture.png`.
+- **Public mode (`ARENA_MODE=public`, deployed from `ubuntu_public/`) must
+  stay read-only at the server:** the middleware in `api.py` refuses every
+  non-GET (a test covers each write route), `/api/status` and `/api/models`
+  never call Ollama, and `user()` returns a guest viewer. A new write
+  endpoint needs nothing extra; a new GET that touches Ollama or the GPU
+  must check `SHOWCASE`. Data reaches the public site only via
+  `arena/publish.py` (completed matches; never uploads or the screen cache).

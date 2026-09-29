@@ -33,8 +33,10 @@ async function refreshStatus() {
   try { S.status = await api('/api/status'); } catch { /* keep last */ }
   const el = document.getElementById('pills'); if (el) el.innerHTML = pills();
 }
+const showcase = () => S.me && S.me.mode === 'showcase';
 function pills() {
   const s = S.status;
+  if (showcase()) return `<span class="pill" title="Published matches only; nothing runs here">${SHIELD}Showcase · read-only</span><a class="pill" href="${esc(S.me.repo_url)}" target="_blank" rel="noopener">GitHub →</a>`;
   if (!s) return '<span class="pill">Checking hosts…</span>';
   const g = s.guardian;
   return `
@@ -46,14 +48,16 @@ function header(active) {
   const running = S.status && S.status.running_match;
   const liveHref = running ? `#/match/${running}` : (S.lastMatch ? `#/match/${S.lastMatch}` : '#/history');
   const resultsHref = S.lastDone ? `#/results/${S.lastDone}` : '#/history';
-  const nav = [['lobby', '#/lobby', 'Lobby'], ['match', liveHref, 'Live match'], ['results', resultsHref, 'Results'], ['history', '#/history', 'History'], ['reviews', '#/reviews', 'Reviews'], ['architecture', '#/architecture', 'Architecture']];
+  const nav = showcase()
+    ? [['results', resultsHref, 'Results'], ['history', '#/history', 'Matches'], ['architecture', '#/architecture', 'Architecture'], ['setup', '#/setup', 'Run it yourself']]
+    : [['lobby', '#/lobby', 'Lobby'], ['match', liveHref, 'Live match'], ['results', resultsHref, 'Results'], ['history', '#/history', 'History'], ['reviews', '#/reviews', 'Reviews'], ['architecture', '#/architecture', 'Architecture']];
   return `<header class="top">
-    <a class="brand" href="#/lobby">${SWORDS}<span>K9X ARENA</span></a>
+    <a class="brand" href="${showcase() ? '#/' : '#/lobby'}">${SWORDS}<span>K9X ARENA</span></a>
     <nav class="nav" aria-label="Main">${nav.map(([k, h, l]) => `<a href="${h}" ${k === active ? 'aria-current="page"' : ''}>${l}${k === 'reviews' && S.pendingReviews ? `<span class="count">${S.pendingReviews}</span>` : ''}</a>`).join('')}</nav>
     <div class="grow"></div>
     <div class="pills" id="pills">${pills()}</div>
-    <button class="userbtn" data-act="logout" title="Sign out">${esc(S.me?.username)} · ${esc(S.me?.role)} · Sign out</button>
-  </header>`;
+    ${showcase() ? '' : `<button class="userbtn" data-act="logout" title="Sign out">${esc(S.me?.username)} · ${esc(S.me?.role)} · Sign out</button>`}
+  </header>${showcase() && active !== 'setup' ? `<div class="showband">A read-only showcase of published K9X Arena matches: nothing runs here. <a href="#/setup">Run it on your own GPU →</a></div>` : ''}`;
 }
 
 // ── router ────────────────────────────────────────────────────────────────────
@@ -65,11 +69,21 @@ async function route() {
   }
   if (parts[0] !== 'login') {
     if (!S.status) await refreshStatus();
-    every(15000, refreshStatus);
-    api('/api/reviews').then((r) => { S.pendingReviews = r.length; }).catch(() => {});
+    if (!showcase()) {
+      every(15000, refreshStatus);
+      api('/api/reviews').then((r) => { S.pendingReviews = r.length; }).catch(() => {});
+    }
+  }
+  if (showcase() && ['', 'lobby', 'reviews', 'login'].includes(parts[0])) {
+    if (parts[0] === '' || parts[0] === 'lobby' || parts[0] === 'login') {
+      const list = await api('/api/matches').catch(() => []); rememberMatches(list);
+      location.hash = S.lastDone ? `#/results/${S.lastDone}` : '#/history'; return;
+    }
+    location.hash = '#/setup'; return;
   }
   try {
     switch (parts[0]) {
+      case 'setup': return renderSetup();
       case 'login': return renderLogin();
       case 'match': return renderMatch(+parts[1], ['octagon', 'orbit'].includes(parts[2]) ? 'octagon' : 'lanes');
       case 'results': return renderResults(+parts[1]);
@@ -230,6 +244,15 @@ app.addEventListener('click', async (ev) => {
     try { await api(`/api/matches/${el.dataset.id}/rescore`, { method: 'POST' }); route(); } catch (e) { alert(e.message); el.disabled = false; el.textContent = el.dataset.label || 'Run the router test'; }
   }
   if (act === 'grid') { S.gridMode = el.dataset.mode; route(); return; }
+  if (act === 'setup-copy') {
+    try { await navigator.clipboard.writeText(setupEnv(S.setup)); el.textContent = 'Copied'; setTimeout(() => { el.textContent = 'Copy'; }, 1500); } catch { el.textContent = 'Select and copy'; }
+    return;
+  }
+  if (act === 'setup-download') {
+    const url = URL.createObjectURL(new Blob([setupEnv(S.setup)], { type: 'text/plain' }));
+    const a = document.createElement('a'); a.href = url; a.download = '.env'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000); return;
+  }
   if (act === 'celebrate' && S.lastReport) celebrate(S.lastReport.leaderboard, S.lastReport.judge, S.lastReport.verdict);
   if (act === 'close-celebration') closeCelebration();
   if (act === 'showall' || act === 'showtop') { S.showAllModels = act === 'showall'; renderLobby(); }
@@ -485,7 +508,7 @@ async function renderResults(id) {
   app.innerHTML = header('results') + `<main class="page">
     <div class="row" style="align-items:flex-end"><div class="grow"><h1 class="display" style="margin:0;font-size:34px">Match #${id} · ${esc(m.suite_name)}</h1>
       <div class="muted" style="font-size:14px">${m.contenders.length} contenders · ${D.tasks.length} tasks · ${m.runs_per_task} runs · judge <span class="mono">${esc(m.judge)}</span> · ${dur(m.finished_at && m.started_at ? m.finished_at - m.started_at : 0)}</div></div>
-      ${R.leaderboard && R.leaderboard.length ? '<button class="btn" data-act="celebrate">Celebrate again</button>' : ''}${m.status === 'completed' ? `<button class="btn" data-act="rescore" data-id="${id}" data-label="Rerun report" title="Recompute stars, the router test and the config from the stored grades. No model is called.">Rerun report</button>` : ''}<a class="btn" href="#/match/${id}">Replay view</a><a class="btn primary" href="#/lobby">Rematch</a></div>
+      ${R.leaderboard && R.leaderboard.length ? '<button class="btn" data-act="celebrate">Celebrate again</button>' : ''}${m.status === 'completed' && !showcase() ? `<button class="btn" data-act="rescore" data-id="${id}" data-label="Rerun report" title="Recompute stars, the router test and the config from the stored grades. No model is called.">Rerun report</button>` : ''}<a class="btn" href="#/match/${id}">Replay view</a>${showcase() ? '<a class="btn primary" href="#/setup">Run it yourself</a>' : '<a class="btn primary" href="#/lobby">Rematch</a>'}</div>
     ${J.checked && !J.reliable ? `<div class="banner info" style="margin-top:14px">The judge gave deliberately poor answers an average of ${J.planted_avg}, so its summary and chat grades don't separate the models reliably. Rank on code, extraction, reasoning and adversarial, or use a stricter judge (ARENA_JUDGE_MODEL / ARENA_JUDGE_MODEL_2).</div>` : ''}
     ${F.offloaded && F.offloaded.length ? `<div class="banner info" style="margin-top:14px">${F.offloaded.map((o) => `<span class="mono">${esc(o.model)}</span> ran ${o.cpu_pct}% on the CPU during its turn`).join('; ')}: other models were holding GPU memory. Timings aren't comparable, so latency is left out of this match's scores.</div>` : ''}
     ${J.shared_family && J.shared_family.length ? `<div class="banner info" style="margin-top:14px">Fairness note: the judge shares a model family (${esc(J.shared_family.join(', '))}) with a contender, which can favour that contender's style.</div>` : ''}
@@ -503,7 +526,7 @@ ${routerKpis(RT, R.router)}
         <section class="panel"><h2>Tasks</h2><table class="grid"><thead><tr><th>Task</th><th>Type</th><th>Title</th>${models.map((mdl) => `<th class="mono" style="text-transform:none">${esc(short(mdl))}</th>`).join('')}</tr></thead><tbody>${tasks}</tbody></table></section>
       </div>
       <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
-        ${RT ? routerPanel(RT, m) : `<section class="panel"><div class="row"><h2 class="grow" style="margin:0">Router audit</h2>${m.status === 'completed' ? `<button class="btn small primary" data-act="rescore" data-id="${m.id}" title="Reruns the report from the stored grades. No model is called.">Run the router test</button>` : ''}</div><p class="muted" style="font-size:12.5px;margin:8px 0">This match ran before the router test, so it shows the old audit. The router test needs no GPU: it reuses this match's scores.</p>
+        ${RT ? routerPanel(RT, m) : `<section class="panel"><div class="row"><h2 class="grow" style="margin:0">Router audit</h2>${m.status === 'completed' && !showcase() ? `<button class="btn small primary" data-act="rescore" data-id="${m.id}" title="Reruns the report from the stored grades. No model is called.">Run the router test</button>` : ''}</div><p class="muted" style="font-size:12.5px;margin:8px 0">This match ran before the router test, so it shows the old audit. The router test needs no GPU: it reuses this match's scores.</p>
           ${audit ? `<table class="grid"><tbody>${audit}</tbody></table>` : `<div class="empty">${esc((m.settings && m.settings.router_note) || 'Router mode was off for this match.')}</div>`}</section>`}
         <section class="panel teal"><div class="row"><h2 class="grow" style="margin:0">Recommended router config</h2><button class="btn small" data-act="copy">Copy</button><a class="btn small primary" href="/api/matches/${id}/config.yaml">Download</a></div>
           <pre class="yaml" id="yaml" style="margin-top:10px">${esc(R.recommended_yaml || '')}</pre>
@@ -557,6 +580,74 @@ function verdictTile(R) {
   const sub = v.kind === 'speed' ? '<div class="muted" style="font-size:12px;margin-top:2px">Quality tied · decided on speed &amp; consistency</div>' : '';
   return `<div class="kpi gold"><div class="muted" style="font-size:13px">Winner</div><div class="v"><span class="mono" style="font-size:20px;color:var(--amber)">${esc(w.model || '—')}</span><span class="big">${w.score != null ? w.score.toFixed(1) : ''}</span></div>${sub}</div>`;
 }
+
+// ── run it yourself (showcase) ────────────────────────────────────────────────
+const SETUP_DEFAULTS = { url: 'http://localhost:11434', contenders: 'qwen3.8:27b, gemma4:31b', judge: 'deepseek-r1:32b',
+  judge2: '', general: 'qwen3.8:27b', reasoning: 'gemma4:31b', admin: '' };
+function setupEnv(v) {
+  const list = (x) => x.split(',').map((t) => t.trim()).filter(Boolean);
+  return `# K9X Arena .env (generated by arena.k9x.ai; nothing you type leaves your browser)
+OLLAMA_BASE_URL=${v.url}
+ARENA_CONTESTANTS=${list(v.contenders).join(',')}
+ARENA_MIN_PARAMS_B=10
+ARENA_JUDGE_MODEL=${v.judge}
+ARENA_JUDGE_MODEL_2=${v.judge2}
+ARENA_ROUTER_GENERAL_MODEL=${v.general}
+ARENA_ROUTER_REASONING_MODEL=${v.reasoning}
+ARENA_GUARDIAN_MODEL=granite4.1-guardian:8b
+ARENA_PORT=8111
+ARENA_USER=demo
+ARENA_PASSWORD=demo
+ARENA_ADMIN_USER=admin
+ARENA_ADMIN_PASSWORD=${v.admin}
+ARENA_DB_PATH=./runtime/arena.db
+K9_ENV=production
+`;
+}
+function setupPulls(v) {
+  const list = (x) => x.split(',').map((t) => t.trim()).filter(Boolean);
+  const all = [...new Set([...list(v.contenders), v.judge, v.judge2, v.general, v.reasoning, 'granite4.1-guardian:8b'].filter(Boolean))];
+  return all.map((m) => `ollama pull ${m}`).join('\n');
+}
+function renderSetup() {
+  const v = S.setup = S.setup || { ...SETUP_DEFAULTS };
+  const field = (k, label, hint) => `<label class="field">${label}<input data-setup="${k}" value="${esc(v[k])}" spellcheck="false">${hint ? `<span class="muted" style="font-size:12px">${hint}</span>` : ''}</label>`;
+  app.innerHTML = header('setup') + `<main class="page" style="display:flex;flex-direction:column;gap:18px;max-width:1100px">
+    <h1 class="display" style="margin:0;font-size:40px">Run it yourself</h1>
+    <p class="muted" style="margin:0;max-width:820px">K9X Arena runs on your own machine against your own Ollama models: your prompts and documents never leave it. This showcase only displays published matches. Here's how to run your own.</p>
+    <section class="panel"><h2>1 · What you need</h2><ul style="margin:0;padding-left:20px;line-height:1.8">
+      <li>A machine with a GPU that Ollama supports (NVIDIA, AMD, or Apple Silicon). About 20 GB of VRAM for ~30B models; 8 GB is enough for 7–8B models.</li>
+      <li><a href="https://ollama.com/download" target="_blank" rel="noopener">Ollama</a>, plus Python 3.11 (or Podman to run it as a container).</li>
+      <li><b>Granite Guardian</b> (<span class="mono">granite4.1-guardian:8b</span>) is mandatory: it screens every prompt and the arena won't run without it.</li></ul></section>
+    <section class="panel"><h2>2 · Choose your models</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px">
+        ${field('url', 'Ollama host', 'Where Ollama runs; localhost if on the same machine')}
+        ${field('contenders', 'Contenders', 'Comma-separated Ollama tags offered in the Lobby')}
+        ${field('judge', 'Judge', 'Grades summary and chat; can\'t also compete. Best from a different model family than the contenders')}
+        ${field('judge2', 'Second judge (optional)', 'A different model for the second judging pass')}
+        ${field('general', 'Your router: general model', 'Scored as "your rules" in the router test')}
+        ${field('reasoning', 'Your router: reasoning model', '')}
+        ${field('admin', 'Admin password (optional)', 'Lets you settle reviews and delete matches; empty disables admin')}
+      </div>
+      <h3 style="margin:16px 0 6px;font-size:15px">Pull them</h3><pre class="yaml" id="pulls">${esc(setupPulls(v))}</pre></section>
+    <section class="panel teal"><div class="row"><h2 class="grow" style="margin:0">3 · Your .env</h2><button class="btn small" data-act="setup-copy">Copy</button><button class="btn small primary" data-act="setup-download">Download .env</button></div>
+      <pre class="yaml" id="setupenv" style="margin-top:10px">${esc(setupEnv(v))}</pre>
+      <p class="muted" style="font-size:12.5px;margin:6px 0 0">Generated in your browser; nothing you type is sent anywhere.</p></section>
+    <section class="panel"><h2>4 · Run it</h2><pre class="yaml">git clone ${esc(S.me.repo_url)}.git
+cd k9x-arena
+# put the .env from step 3 here, then:
+./run.sh                      # checks Ollama, Guardian and your models first, then starts
+# or as a container (Linux + Podman):
+ubuntu/build-run.sh all</pre>
+      <p class="muted" style="margin:8px 0 0">Open <span class="mono">http://localhost:8111</span>, sign in as <span class="mono">demo / demo</span>, pick contenders in the Lobby and start a match. Start with <b>Quick Check</b> (6 tasks, minutes); use <b>Claims Ops Starter</b> (30 tasks) to test the model router properly.</p></section>
+  </main>`;
+}
+app.addEventListener('input', (ev) => {
+  const el = ev.target.closest('[data-setup]'); if (!el || !S.setup) return;
+  S.setup[el.dataset.setup] = el.value.trim();
+  const env = document.getElementById('setupenv'); if (env) env.textContent = setupEnv(S.setup);
+  const pulls = document.getElementById('pulls'); if (pulls) pulls.textContent = setupPulls(S.setup);
+});
 
 // ── task drill-down ───────────────────────────────────────────────────────────
 async function renderTask(id, taskId) {

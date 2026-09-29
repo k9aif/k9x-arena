@@ -126,6 +126,30 @@ pytest tests -q
   Overall / Answer quality toggle; "Best" and the winner follow quality
   first, with speed only breaking ties.
 
+## Lab and public site
+
+The same code runs two ways, from two deploy folders:
+
+| | `ubuntu/` (lab, your intranet) | `ubuntu_public/` (public, e.g. arena.k9x.ai) |
+|---|---|---|
+| Port | 8111 | 8112 |
+| Runs matches on your GPU | yes | **no**: no Ollama settings at all |
+| Writes (matches, uploads, reruns, reviews, deletes) | yes | **refused by the server** (`ARENA_MODE=public`) |
+| Data | full history | only matches you publish |
+| Login | demo / admin | none (read-only) |
+| Extra | | **Run it yourself** page: setup steps and a `.env` generator (runs in the browser) |
+
+```bash
+ubuntu_public/build-run.sh all          # build + start the public site on :8112
+ubuntu_public/build-run.sh publish 11   # copy completed match #11 from the lab
+ubuntu_public/build-run.sh unpublish 9  # take one down
+ubuntu_public/build-run.sh list         # what's public now
+```
+
+The public site has its own image tag and data folder: rebuilding the lab
+never changes it, and it never reads the lab's database (publishing copies
+the chosen matches; uploads and the screening cache never leave the lab).
+
 ## Status and limits
 
 - One match at a time (one GPU). Matches can be paused and resumed.

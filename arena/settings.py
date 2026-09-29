@@ -156,6 +156,17 @@ def model_for_alias(match_config: Dict[str, Any], alias: str) -> str:
     return entry.get("model", alias) if isinstance(entry, dict) else str(entry)
 
 
+def showcase_mode() -> bool:
+    """ARENA_MODE=public (or showcase): the public, read-only instance
+    (arena.k9x.ai, deployed from ubuntu_public/).
+    It serves published matches and the setup guide, needs no Ollama or
+    Guardian, and refuses every write. Anything else is the full lab."""
+    return os.environ.get("ARENA_MODE", "").strip().lower() in ("public", "showcase")
+
+
+REPO_URL = "https://github.com/k9aif/k9x-arena"
+
+
 def credentials() -> Dict[str, Dict[str, str]]:
     users = {
         os.environ.get("ARENA_USER", "demo"): {
