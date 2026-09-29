@@ -365,3 +365,10 @@ def test_second_judge_entry_and_think_stripping():
     m2 = build_inference_config(cfg, ["a:1"], "j:1")
     assert m2["inference"]["llm_factory"]["models"]["judge_b"]["model"] == "k:2"
     assert judged_text("<think>long reasoning</think>Final answer.") == "Final answer."
+
+
+def test_rounds_capped_at_three(client):
+    client.post("/api/login", json={"username": "demo", "password": "demo"})
+    r = client.post("/api/matches", json={"contenders": ["a:1"], "judge": "j:1",
+                                          "suite": "built-in:quick_check", "runs_per_task": 5})
+    assert r.status_code == 422

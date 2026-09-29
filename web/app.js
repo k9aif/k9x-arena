@@ -126,7 +126,7 @@ async function renderLobby() {
     selected: prev.selected || new Set(models.default_contestants.filter((t) => tags.includes(t) && t !== judgeDefault)),
     judge: prev.judge || judgeDefault,
     suite: prev.suite || (suites[0] && suites[0].key) || '',
-    runs: prev.runs || models.runs_per_task, routerMode: prev.routerMode ?? models.router_mode,
+    runs: Math.min(3, prev.runs || models.runs_per_task), routerMode: prev.routerMode ?? models.router_mode,
     upload: prev.upload || null, error: null, busy: false, sizeNote,
     secondJudge: models.second_judge || '',
   };
@@ -172,7 +172,7 @@ function drawLobby() {
       <div class="field">Contenders<div class="chips">${selected.length ? selected.map((t) => `<span class="chip">${esc(t)}</span>`).join('') : '<span class="muted">Pick at least one on the left</span>'}</div></div>
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
         <label class="field">Judge (not a contender)<select data-act="judge">${L.models.map((m) => `<option ${m.tag === L.judge ? 'selected' : ''}>${esc(m.tag)}</option>`).join('')}</select></label>
-        <label class="field">Runs per task<select data-act="runs">${[1, 2, 3, 4, 5].map((n) => `<option ${n === L.runs ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+        <label class="field">Rounds (runs per task)<select data-act="runs">${[1, 2, 3].map((n) => `<option value="${n}" ${n === L.runs ? 'selected' : ''}>${n}${n === 3 ? ' · full bout' : n === 1 ? ' · quick' : ''}</option>`).join('')}</select></label>
       </div>
       ${judgeNote(L, selected)}
       <label class="field">Task suite<select data-act="suite">${L.suites.map((s) => `<option value="${esc(s.key)}" ${s.key === L.suite ? 'selected' : ''}>${esc(s.name)} · ${s.tasks} tasks · ${s.source}</option>`).join('')}</select></label>

@@ -255,7 +255,7 @@ class NewMatch(BaseModel):
     contenders: List[str] = Field(min_length=1, max_length=6)
     judge: str
     suite: str
-    runs_per_task: int = Field(default=3, ge=1, le=5)
+    runs_per_task: int = Field(default=3, ge=1, le=3)  # rounds: 3 is plenty to measure consistency
     router_mode: bool = True
 
 

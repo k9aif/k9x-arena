@@ -38,7 +38,7 @@ def _truthy(value: Any) -> bool:
 def load_config() -> Dict[str, Any]:
     cfg = load_yaml(ROOT / "config.yaml")
     arena = cfg.setdefault("arena", {})
-    arena["runs_per_task"] = int(arena.get("runs_per_task", 3))
+    arena["runs_per_task"] = max(1, min(3, int(arena.get("runs_per_task", 3))))  # 1–3 rounds
     arena["router_mode"] = _truthy(arena.get("router_mode", True))
     # Granite Guardian is mandatory in the arena: whatever config.yaml says,
     # it is on and fails closed.

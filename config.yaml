@@ -11,7 +11,7 @@ arena:
   # Optional second judge for pass 2 (a different model is the fairest check).
   # Empty: pass 2 samples the first judge again at a higher temperature.
   judge_model_2: "${ARENA_JUDGE_MODEL_2:-}"
-  runs_per_task: 3
+  runs_per_task: 3          # rounds per task, 1–3 (3 measures consistency well)
   # Lobby lists only models with at least this many billion parameters
   # (ARENA_MIN_PARAMS_B in .env overrides). "Show smaller models" reveals the rest.
   min_contender_params_b: 10
