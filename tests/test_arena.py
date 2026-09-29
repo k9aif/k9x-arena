@@ -317,3 +317,11 @@ def test_upload_scans_each_task_and_rejects_flagged(monkeypatch, client):
         {"id": "B1", "type": "chat", "title": "a", "prompt": "BADTHING in a normal task", "rubric": "r"}]})
     r = client.post("/api/uploads", files={"file": ("bad.yaml", bad.encode(), "text/yaml")}).json()
     assert r["accepted"] is False and r["stage"] == "guardian" and "B1" in r["reason"]
+
+
+def test_router_audit_names_router_pick_on_a_quality_tie():
+    rows = [{"model": "a", "task_type": "code", "quality": 100.0},
+            {"model": "b", "task_type": "code", "quality": 100.0}]
+    audit = scoring.router_audit([{"id": "C1", "type": "code"}], [{"task_id": "C1", "alias": "general"}],
+                                 rows, {"general": "b"})
+    assert audit[0]["verdict"] == "match" and audit[0]["best_model"] == "b" and audit[0]["regret"] == 0

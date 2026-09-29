@@ -183,8 +183,10 @@ def router_audit(tasks: List[Dict[str, Any]], router_runs: List[Dict[str, Any]],
                          "best_model": b["model"], "regret": None, "verdict": "not_in_match"})
             continue
         regret = round(b["quality"] - quality[(model, ttype)], 1)
+        # A tie on quality is a match: name the router's own pick as best.
+        best_model = model if regret <= 0 else b["model"]
         rows.append({"task_type": ttype, "router_alias": alias, "router_model": model,
-                     "best_model": b["model"], "regret": regret,
+                     "best_model": best_model, "regret": max(0.0, regret),
                      "verdict": "match" if regret <= 0 else "mismatch"})
     return rows
 

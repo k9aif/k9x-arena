@@ -204,6 +204,8 @@ app.addEventListener('click', async (ev) => {
   const act = el.dataset.act;
   if (act === 'logout') { await api('/api/logout', { method: 'POST' }).catch(() => {}); S.me = null; location.hash = '#/login'; }
   if (act === 'start') startMatch();
+  if (act === 'celebrate' && S.lastReport) celebrate(S.lastReport.leaderboard, S.lastReport.judge);
+  if (act === 'close-celebration') closeCelebration();
   if (act === 'showall' || act === 'showtop') { S.showAllModels = act === 'showall'; renderLobby(); }
   if (['pause', 'cancel', 'resume'].includes(act)) {
     try { await api(`/api/matches/${el.dataset.id}/${act}`, { method: 'POST' }); } catch (e) { alert(e.message); }
@@ -265,7 +267,9 @@ async function renderMatch(id, view) {
     const d = JSON.parse(msg.data);
     S.stream.status = d.status; S.stream.phase = d.phase; S.stream.error = d.error; S.stream.progress = d.progress; S.stream.current = d.current;
     if (d.events && d.events.length) S.stream.events = [...S.stream.events, ...d.events].slice(-60);
+    const justFinished = d.status === 'completed' && S.match.match.status !== 'completed';
     Object.assign(S.match.match, { status: d.status, phase: d.phase, error: d.error });
+    if (justFinished) { S.celebrate = id; setTimeout(() => { location.hash = `#/results/${id}`; }, 1200); }
     S.match.progress = d.progress || S.match.progress; S.match.current = d.current;
     draw();
   };
@@ -366,14 +370,17 @@ async function renderResults(id) {
   if (!id) { location.hash = '#/history'; return; }
   const D = await api(`/api/matches/${id}`); const m = D.match; const R = D.report;
   if (m.status === 'completed') S.lastDone = id;
+  S.lastReport = R;
   if (!R) {
     app.innerHTML = header('results') + `<main class="page"><div class="banner info">Match #${id} has no results yet (${esc(m.status)}). <a href="#/match/${id}">Watch it live</a>.</div></main>`; return;
   }
   const types = D.task_types.filter((t) => D.stars.some((s) => s.task_type === t));
   const models = R.leaderboard.map((b) => b.model);
-  const best = {}; D.stars.forEach((s) => { if (!best[s.task_type] || s.quality > best[s.task_type].quality) best[s.task_type] = s; });
+  // "Best" follows the number shown in the cell (the weighted score); ties all get the badge.
+  const best = {}; D.stars.forEach((s) => { const b = best[s.task_type]; if (!b || s.score > b.score) best[s.task_type] = s; });
+  const isTop = (s) => best[s.task_type] && s.score === best[s.task_type].score;
   const cell = (mdl, t) => { const s = D.stars.find((x) => x.model === mdl && x.task_type === t); if (!s) return '<td class="muted">—</td>';
-    const isBest = best[t] && best[t].model === mdl;
+    const isBest = isTop(s);
     return `<td><div class="cell ${isBest ? 'best' : ''}"><span class="stars" aria-label="${s.stars} of 5 stars">${starText(s.stars)}</span><span class="row" style="gap:6px"><span class="n">${s.score.toFixed(0)}</span>${isBest ? '<span class="bestbadge">Best</span>' : ''}</span></div></td>`; };
   const grid = `<table class="grid"><thead><tr><th>Model</th>${types.map((t) => `<th>${TYPE_LABEL[t]}</th>`).join('')}</tr></thead><tbody>${models.map((mdl) => `<tr><td class="mono">${esc(mdl)}</td>${types.map((t) => cell(mdl, t)).join('')}</tr>`).join('')}</tbody></table>`;
   const board = R.leaderboard.map((b) => `<tr><td class="rank r${b.rank}">${b.rank}</td><td class="mono">${esc(b.model)}</td><td class="display" style="font-size:20px">${b.score.toFixed(1)}</td><td class="stars">${starText(b.stars)}</td><td>${secs(b.p50_ms)} / ${secs(b.p95_ms)}</td><td>${b.over_refusals} of ${b.answers}</td><td>± ${b.spread}</td></tr>`).join('');
@@ -383,10 +390,16 @@ async function renderResults(id) {
       <td class="display" style="font-size:18px;text-align:right;color:${ok || na ? 'var(--muted)' : 'var(--amber)'}">${a.regret == null ? '—' : ok ? '0' : '−' + a.regret}</td></tr>`; }).join('');
   const tasks = D.tasks.map((t) => `<tr class="click" data-href="#/task/${id}/${encodeURIComponent(t.id)}"><td class="mono muted">${esc(t.id)}</td><td><span class="tag">${esc(t.type)}</span></td><td>${esc(t.title)}${t.screen && t.screen.excluded ? ' <span class="badge red">Excluded by screening</span>' : ''}</td>${models.map((mdl) => { const v = (D.task_scores[t.id] || {})[mdl]; return `<td class="display" style="font-size:18px">${v == null ? '—' : v.toFixed(0)}</td>`; }).join('')}</tr>`).join('');
   const w = R.winner || {}; const J = R.judge || {}; const RT = R.router || {};
+  const seenKey = `k9x-arena-celebrated-${id}`;
+  let seen = false; try { seen = localStorage.getItem(seenKey) === '1'; } catch { /* storage blocked */ }
+  if (m.status === 'completed' && w.model && (!seen || S.celebrate === id)) {
+    S.celebrate = null; try { localStorage.setItem(seenKey, '1'); } catch { /* storage blocked */ }
+    setTimeout(() => celebrate(R.leaderboard, R.judge), 50);
+  }
   app.innerHTML = header('results') + `<main class="page">
     <div class="row" style="align-items:flex-end"><div class="grow"><h1 class="display" style="margin:0;font-size:34px">Match #${id} · ${esc(m.suite_name)}</h1>
       <div class="muted" style="font-size:14px">${m.contenders.length} contenders · ${D.tasks.length} tasks · ${m.runs_per_task} runs · judge <span class="mono">${esc(m.judge)}</span> · ${dur(m.finished_at && m.started_at ? m.finished_at - m.started_at : 0)}</div></div>
-      <a class="btn" href="#/match/${id}">Replay view</a><a class="btn primary" href="#/lobby">Rematch</a></div>
+      ${w.model ? '<button class="btn" data-act="celebrate">Celebrate again</button>' : ''}<a class="btn" href="#/match/${id}">Replay view</a><a class="btn primary" href="#/lobby">Rematch</a></div>
     ${J.pending ? `<div class="banner info" style="margin-top:14px">${J.pending} judged answers await review, so these results are provisional. <a href="#/reviews">Review them</a>.</div>` : ''}
     <section class="kpis" aria-label="Summary">
       <div class="kpi gold"><div class="muted" style="font-size:13px">Winner</div><div class="v"><span class="mono" style="font-size:20px;color:var(--amber)">${esc(w.model || '—')}</span><span class="big">${w.score != null ? w.score.toFixed(1) : ''}</span></div></div>
@@ -475,6 +488,46 @@ function renderArchitecture() {
           <p class="muted" style="font-size:13px;margin:10px 0 0">The router scores each request on its own (capability, sensitivity, latency, cost). It records its decisions but does not learn from them yet; the arena’s recommended config is how evidence feeds back into it.</p></section>
       </div>
     </div></main>`;
+}
+
+// ── winner celebration ────────────────────────────────────────────────────────
+let celebrationTimer = null;
+function closeCelebration() {
+  clearTimeout(celebrationTimer);
+  const el = document.getElementById('celebration'); if (!el) return;
+  el.classList.add('leaving'); setTimeout(() => el.remove(), 350);
+  document.removeEventListener('keydown', celebrationKey);
+}
+function celebrationKey(ev) { if (ev.key === 'Escape') closeCelebration(); }
+function celebrate(board, judge) {
+  if (!board || !board.length) return;
+  document.getElementById('celebration')?.remove();
+  const [w, ...rest] = board;
+  const sparks = Array.from({ length: 36 }, (_, i) => {
+    const a = (i / 36) * Math.PI * 2, d = 120 + (i % 5) * 38;
+    return `<span class="spark" style="--x:${Math.cos(a) * d}px;--y:${Math.sin(a) * d}px;animation-delay:${(i % 6) * 0.12}s"></span>`;
+  }).join('');
+  const el = document.createElement('div');
+  el.id = 'celebration'; el.className = 'celebration';
+  el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-labelledby', 'win-title');
+  el.innerHTML = `<div class="cele-card">
+    <button class="cele-close" data-act="close-celebration" aria-label="Close">✕</button>
+    <div class="cele-trophy" aria-hidden="true">${sparks}
+      <svg viewBox="0 0 120 120" width="150" height="150"><defs><linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff3b0"/><stop offset=".45" stop-color="#ffd166"/><stop offset="1" stop-color="#b8860b"/></linearGradient></defs>
+        <path d="M34 18h52v18c0 18-11 32-26 34-15-2-26-16-26-34z" fill="url(#gold)"/>
+        <path d="M34 24H18c0 16 8 24 18 26M86 24h16c0 16-8 24-18 26" fill="none" stroke="url(#gold)" stroke-width="6" stroke-linecap="round"/>
+        <rect x="54" y="70" width="12" height="16" fill="url(#gold)"/><rect x="40" y="86" width="40" height="10" rx="3" fill="url(#gold)"/><rect x="34" y="96" width="52" height="10" rx="3" fill="#b8860b"/>
+        <path d="M60 30l3.5 7 7.7 1.1-5.6 5.4 1.3 7.7-6.9-3.6-6.9 3.6 1.3-7.7-5.6-5.4 7.7-1.1z" fill="#fff8d6"/></svg></div>
+    <div class="cele-label">${!judge || !judge.judged ? 'AND THE WINNER IS' : judge.disagreements ? 'AND THE WINNER, BY SPLIT DECISION' : 'AND THE WINNER, BY UNANIMOUS DECISION'}</div>
+    <h2 id="win-title" class="cele-name">${esc(w.model)}</h2>
+    <div class="cele-score"><span class="display">${w.score.toFixed(1)}</span><span class="stars">${starText(w.stars)}</span></div>
+    ${rest.length ? `<div class="cele-rest">${rest.map((b) => `<span><b class="r${b.rank}">${b.rank}</b> <span class="mono">${esc(b.model)}</span> · ${b.score.toFixed(1)}</span>`).join('')}</div>` : ''}
+  </div>`;
+  el.addEventListener('click', (ev) => { if (ev.target === el || ev.target.closest('[data-act="close-celebration"]')) closeCelebration(); });
+  document.body.appendChild(el);
+  document.addEventListener('keydown', celebrationKey);
+  el.querySelector('.cele-close').focus();
+  celebrationTimer = setTimeout(closeCelebration, 7000);
 }
 
 route();

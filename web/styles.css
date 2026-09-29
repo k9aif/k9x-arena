@@ -207,3 +207,22 @@ pre.yaml { margin: 0; padding: 12px 14px; border-radius: 10px; background: var(-
 .pill.gpu { max-width: 260px; overflow: hidden; text-overflow: ellipsis; display: inline-block; }
 .top { gap: 20px; }
 @media (max-width: 1280px) { .pill.gpu { display: none; } }
+
+/* winner celebration */
+.celebration { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse 50% 45% at 50% 45%, #3a2f1299 0%, #04060df2 70%); animation: cele-in .35s ease; }
+.celebration.leaving { animation: cele-out .35s ease forwards; }
+.cele-card { position: relative; width: min(560px, 92vw); padding: 36px 32px 30px; border-radius: 22px; background: linear-gradient(180deg, #1d180b, #0d1422); border: 1px solid #ffd16666; box-shadow: 0 0 0 1px #ffd16622, 0 30px 120px #ffd16633; text-align: center; }
+.cele-close { position: absolute; top: 12px; right: 12px; width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line-2); background: transparent; color: var(--text); font-size: 16px; }
+.cele-trophy { position: relative; width: 150px; height: 150px; margin: 0 auto 6px; animation: trophy 2.4s ease-in-out infinite; filter: drop-shadow(0 0 24px #ffd16699); }
+.spark { position: absolute; left: 50%; top: 45%; width: 6px; height: 6px; border-radius: 50%; background: #fff3b0; box-shadow: 0 0 10px #ffd166; animation: spark 1.6s ease-out infinite; }
+.cele-label { color: var(--amber); letter-spacing: 4px; font-size: 13px; font-weight: 600; }
+.cele-name { margin: 6px 0 4px; font-family: var(--mono); font-size: 30px; font-weight: 500; color: #fff8e1; overflow-wrap: anywhere; }
+.cele-score { display: flex; align-items: baseline; justify-content: center; gap: 14px; }
+.cele-score .display { font-size: 48px; color: var(--amber); }
+.cele-score .stars { font-size: 22px; }
+.cele-rest { margin-top: 16px; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; color: var(--muted); font-size: 14px; }
+@keyframes cele-in { from { opacity: 0; transform: scale(.96) } to { opacity: 1; transform: none } }
+@keyframes cele-out { to { opacity: 0; transform: scale(.98) } }
+@keyframes trophy { 0%, 100% { transform: translateY(0) rotate(-2deg) } 50% { transform: translateY(-8px) rotate(2deg) } }
+@keyframes spark { 0% { transform: translate(-50%, -50%) scale(.2); opacity: 0 } 20% { opacity: 1 } 100% { transform: translate(calc(-50% + var(--x)), calc(-50% + var(--y))) scale(1); opacity: 0 } }
+@media (prefers-reduced-motion: reduce) { .celebration, .cele-trophy, .spark { animation: none !important; } .spark { display: none; } }
