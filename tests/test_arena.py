@@ -241,3 +241,12 @@ def test_preflight_passes_with_everything_pulled(monkeypatch):
     monkeypatch.setattr(preflight.requests, "get", lambda *a, **k: _Resp({"models": names}))
     monkeypatch.setattr(preflight.requests, "post", lambda *a, **k: _Resp({"response": "ok"}))
     assert preflight.FAIL not in _levels(preflight.check())
+
+
+def test_params_parsing_and_min_size_default():
+    from arena.ollama import params_billions
+    from arena.settings import min_params_b
+    assert params_billions("27.3B") == 27.3
+    assert params_billions("560M") == 0.56
+    assert params_billions("") is None
+    assert min_params_b({"arena": {"min_contender_params_b": 10}}) == 10.0

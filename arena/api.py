@@ -28,7 +28,7 @@ from k9_aif_abb.k9_governance.guardian_governance import GuardianGovernance
 
 from arena import __version__, engine, live, ollama, scoring, store, suites
 from arena.settings import (ROOT, TASK_TYPES, credentials, default_contestants, judge_model,
-                            load_config, ollama_base_url)
+                            load_config, min_params_b, ollama_base_url)
 
 WEB = ROOT / "web"
 CONFIG = load_config()
@@ -136,7 +136,7 @@ def status(u=Depends(user)):
 
 # ── models & suites ─────────────────────────────────────────────────────────
 @app.get("/api/models")
-def models(u=Depends(user)):
+def models(all: bool = False, u=Depends(user)):
     try:
         pulled = ollama.list_models()
     except Exception as exc:
@@ -165,7 +165,16 @@ def models(u=Depends(user)):
         p["best_at"] = max(best[tag], key=best[tag].get) if best.get(tag) else None
         p["is_guardian"] = tag == guardian_model
         p["is_embedding"] = "embed" in tag
-    return {"models": pulled, "default_contestants": default_contestants(CONFIG),
+    # Only top models by default: at least arena.min_contender_params_b billion
+    # parameters. Models named in .env (contenders, judge) always stay listed.
+    threshold = min_params_b(CONFIG)
+    named = set(default_contestants(CONFIG)) | {judge_model(CONFIG)}
+    usable = [p for p in pulled if not p["is_guardian"] and not p["is_embedding"]]
+    small = [p for p in usable if p["tag"] not in named
+             and p["params_b"] is not None and p["params_b"] < threshold]
+    shown = usable if all else [p for p in usable if p not in small]
+    return {"models": shown, "hidden_small": 0 if all else len(small), "min_params_b": threshold,
+            "show_all": all, "default_contestants": default_contestants(CONFIG),
             "default_judge": judge_model(CONFIG), "guardian_model": guardian_model,
             "runs_per_task": CONFIG["arena"]["runs_per_task"], "router_mode": CONFIG["arena"]["router_mode"]}
 

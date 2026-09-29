@@ -9,6 +9,9 @@ arena:
   # Judge for open-ended answers. Never allowed to also compete.
   judge_model: "${ARENA_JUDGE_MODEL:-qwen2.5:7b}"
   runs_per_task: 3
+  # Lobby lists only models with at least this many billion parameters
+  # (ARENA_MIN_PARAMS_B in .env overrides). "Show smaller models" reveals the rest.
+  min_contender_params_b: 10
   router_mode: true          # also send every task through K9ModelRouter
   max_tokens: 2048
   suites_dir: ./suites

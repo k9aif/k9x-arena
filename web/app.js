@@ -113,10 +113,11 @@ async function renderLogin() {
 async function renderLobby() {
   app.innerHTML = header('lobby') + '<main class="page"><div class="empty">Loading contenders…</div></main>';
   let models, suites, matches;
-  try { [models, suites, matches] = await Promise.all([api('/api/models'), api('/api/suites'), api('/api/matches')]); }
+  try { [models, suites, matches] = await Promise.all([api(`/api/models${S.showAllModels ? '?all=true' : ''}`), api('/api/suites'), api('/api/matches')]); }
   catch (e) { app.innerHTML = header('lobby') + `<main class="page"><div class="banner">${esc(e.message)}</div></main>`; return; }
   rememberMatches(matches);
   const usable = models.models.filter((m) => !m.is_guardian && !m.is_embedding);
+  const sizeNote = { hidden: models.hidden_small, min: models.min_params_b, all: models.show_all };
   const tags = usable.map((m) => m.tag);
   const prev = S.lobby || {};
   const judgeDefault = tags.includes(models.default_judge) ? models.default_judge : (tags[tags.length - 1] || '');
@@ -126,7 +127,7 @@ async function renderLobby() {
     judge: prev.judge || judgeDefault,
     suite: prev.suite || (suites[0] && suites[0].key) || '',
     runs: prev.runs || models.runs_per_task, routerMode: prev.routerMode ?? models.router_mode,
-    upload: prev.upload || null, error: null, busy: false,
+    upload: prev.upload || null, error: null, busy: false, sizeNote,
   };
   drawLobby();
 }
@@ -156,7 +157,8 @@ function drawLobby() {
   const guardianOff = S.status && !S.status.guardian.live;
   app.innerHTML = header('lobby') + `<main class="page"><div class="lobby">
     <section aria-labelledby="roster" style="display:flex;flex-direction:column;gap:18px;min-width:0">
-      <div class="row" style="align-items:baseline;gap:14px"><h1 id="roster">Contenders</h1><span class="muted" style="font-size:14px">Pulled on this Ollama host · pick who enters the next match</span></div>
+      <div class="row" style="align-items:baseline;gap:14px"><h1 id="roster">Contenders</h1><span class="muted" style="font-size:14px">Pulled on this Ollama host · pick who enters the next match</span>
+        <span class="grow"></span>${L.sizeNote.hidden ? `<button class="btn small" data-act="showall">Show ${L.sizeNote.hidden} smaller model${L.sizeNote.hidden > 1 ? 's' : ''} (&lt; ${L.sizeNote.min}B)</button>` : L.sizeNote.all ? `<button class="btn small" data-act="showtop">Only models ≥ ${L.sizeNote.min}B</button>` : ''}</div>
       ${L.models.length ? `<div class="roster">${cards}</div>` : '<div class="panel empty">No models pulled on the Ollama host yet. Pull some with <span class="mono">ollama pull &lt;model&gt;</span>.</div>'}
       <section class="panel" aria-labelledby="recent"><h2 id="recent">Recent matches</h2>
         ${recent ? `<table class="grid"><thead><tr><th>Match</th><th>Suite</th><th>Contenders</th><th>Status</th><th>Winner</th><th>Duration</th></tr></thead><tbody>${recent}</tbody></table>` : '<div class="empty">No matches yet. Start one on the right.</div>'}
@@ -202,6 +204,7 @@ app.addEventListener('click', async (ev) => {
   const act = el.dataset.act;
   if (act === 'logout') { await api('/api/logout', { method: 'POST' }).catch(() => {}); S.me = null; location.hash = '#/login'; }
   if (act === 'start') startMatch();
+  if (act === 'showall' || act === 'showtop') { S.showAllModels = act === 'showall'; renderLobby(); }
   if (['pause', 'cancel', 'resume'].includes(act)) {
     try { await api(`/api/matches/${el.dataset.id}/${act}`, { method: 'POST' }); } catch (e) { alert(e.message); }
     if (act === 'resume') route();

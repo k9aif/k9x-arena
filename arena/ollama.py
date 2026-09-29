@@ -6,11 +6,21 @@ goes through llm_invoke."""
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 
 import requests
 
 from arena.settings import ollama_base_url
+
+
+def params_billions(parameter_size: str):
+    """'27.3B' -> 27.3, '560M' -> 0.56; None when Ollama doesn't say."""
+    m = re.fullmatch(r"\s*([\d.]+)\s*([BMK])\s*", parameter_size or "", re.IGNORECASE)
+    if not m:
+        return None
+    value = float(m.group(1))
+    return {"B": value, "M": value / 1000, "K": value / 1e6}[m.group(2).upper()]
 
 
 def list_models(timeout: float = 5.0) -> List[Dict[str, Any]]:
@@ -24,6 +34,7 @@ def list_models(timeout: float = 5.0) -> List[Dict[str, Any]]:
             "size_gb": round((m.get("size") or 0) / 1e9, 1),
             "family": d.get("family", ""),
             "parameters": d.get("parameter_size", ""),
+            "params_b": params_billions(d.get("parameter_size", "")),
             "quantization": d.get("quantization_level", ""),
             "modified_at": m.get("modified_at", ""),
         })

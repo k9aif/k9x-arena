@@ -62,6 +62,15 @@ def default_contestants(cfg: Dict[str, Any]) -> List[str]:
     return split_tags(str(cfg["arena"].get("contestants", "")))
 
 
+def min_params_b(cfg: Dict[str, Any]) -> float:
+    """Smallest model (billions of parameters) listed as a contender by default."""
+    env = os.environ.get("ARENA_MIN_PARAMS_B", "").strip()
+    try:
+        return float(env) if env else float(cfg["arena"].get("min_contender_params_b", 10))
+    except ValueError:
+        return 10.0
+
+
 def judge_model(cfg: Dict[str, Any]) -> str:
     return str(cfg["arena"].get("judge_model", "")).strip()
 
