@@ -48,6 +48,8 @@ docs/architecture.puml
 - The recommended config must use only keys K9ModelRouter reads
   (`provider`, `llm_ref`, `capabilities`, `default_model`), each capability on
   one entry — there's a test for this.
-- Regenerate the diagram with
+- The at-a-glance image `web/overview.png` is rendered from `docs/overview.html`
+  (an SVG page; screenshot the `#d` element at 2x).
+- Regenerate the detailed diagram with
   `PLANTUML_LIMIT_SIZE=8192 plantuml -tpng -Sdpi=160 docs/architecture.puml -o ../web`
   then rename `web/k9x_arena_architecture.png` to `web/architecture.png`.

@@ -460,6 +460,8 @@ function renderArchitecture() {
   ];
   app.innerHTML = header('architecture') + `<main class="page" style="display:flex;flex-direction:column;gap:18px">
     <h1 class="display" style="margin:0;font-size:40px">Architecture</h1>
+    <section class="panel" style="padding:12px"><img src="/static/overview.png" alt="K9X Arena at a glance: you bring models, a task suite and a judge; four stages Screen, Contest, Grade and Report; you get star ratings, a router audit and a recommended router config. Granite Guardian and k9x_Shield govern throughout; every model call goes through llm_invoke and the Intelligent Model Router to your Ollama GPU." style="width:100%;height:auto;border-radius:10px;display:block"></section>
+    <h2 class="display" style="margin:6px 0 0;font-size:28px">In detail</h2>
     <p class="muted" style="margin:0;max-width:900px">K9X Arena is a K9-AIF solution: its router, orchestrator, squads and agents extend the framework’s building blocks, and every model call goes through the framework’s llm_invoke and K9ModelRouter.</p>
     <div class="results" style="grid-template-columns:minmax(0,1fr) 440px">
       <section class="panel" style="padding:12px"><a href="/static/architecture.png" target="_blank" rel="noopener"><img src="/static/architecture.png" alt="K9X Arena architecture: Web UI to FastAPI, Engine, ArenaRouter and ArenaOrchestrator; four squads in order; every model call through llm_invoke and K9ModelRouter to the Ollama host; Granite Guardian and k9x_Shield screening; SQLite store." style="width:100%;height:auto;border-radius:10px;display:block"></a></section>

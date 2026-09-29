@@ -8,7 +8,7 @@ writes the `model_catalog` your router should use.
 It runs on your own machine against your own Ollama models. Your prompts and
 documents never leave it.
 
-![K9X Arena architecture](web/architecture.png)
+![K9X Arena at a glance](web/overview.png)
 
 ## What makes it different
 
@@ -65,6 +65,8 @@ passes, the review rule, the code sandbox timeout and the router-under-test
 capabilities.
 
 ## How a match runs
+
+![K9X Arena architecture](web/architecture.png)
 
 1. **SuiteSquad**: load the suite; screen every prompt with k9x_Shield and Granite Guardian.
 2. **ContestantSquad**: run every task on every contender (grouped by model so the GPU swaps rarely), then once through the router.

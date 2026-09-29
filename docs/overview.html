@@ -1,0 +1,122 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#070b14}
+svg text{font-family:'IBM Plex Sans',sans-serif}
+.t{font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:.5px}
+.m{font-family:'IBM Plex Mono',monospace}
+</style></head><body>
+<svg id="d" width="1600" height="760" viewBox="0 0 1600 760" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5eead4"/></marker>
+    <marker id="aa" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ffd166"/></marker>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b1424"/><stop offset="1" stop-color="#070b14"/></linearGradient>
+  </defs>
+  <rect width="1600" height="760" fill="url(#bg)"/>
+
+  <text x="60" y="64" class="t" font-size="38" fill="#e6edf5">K9X ARENA</text>
+  <text x="258" y="64" font-size="18" fill="#93a3b8">at a glance: bring your models and tasks, get stars, a router audit and a config</text>
+
+  <!-- governance band -->
+  <rect x="300" y="96" width="1000" height="56" rx="14" fill="#0f2a28" stroke="#2dd4bf" stroke-width="1.5"/>
+  <text x="330" y="131" font-size="19" font-weight="600" fill="#5eead4">Governed throughout</text>
+  <rect x="560" y="108" width="330" height="32" rx="16" fill="#12302f"/>
+  <text x="725" y="130" font-size="16" fill="#e6edf5" text-anchor="middle">Granite Guardian · scans each prompt once</text>
+  <rect x="910" y="108" width="370" height="32" rx="16" fill="#12302f"/>
+  <text x="1095" y="130" font-size="16" fill="#e6edf5" text-anchor="middle">k9x_Shield · checks every model call</text>
+
+  <!-- inputs -->
+  <rect x="40" y="200" width="220" height="250" rx="18" fill="#1a1530" stroke="#a78bfa" stroke-width="2"/>
+  <text x="150" y="240" class="t" font-size="26" fill="#c4b5fd" text-anchor="middle">YOU BRING</text>
+  <text x="150" y="285" font-size="17" fill="#e6edf5" text-anchor="middle">Your models</text>
+  <text x="150" y="307" font-size="14" fill="#a5b4c8" text-anchor="middle">any pulled on Ollama</text>
+  <text x="150" y="350" font-size="17" fill="#e6edf5" text-anchor="middle">A task suite</text>
+  <text x="150" y="372" font-size="14" fill="#a5b4c8" text-anchor="middle">built-in or uploaded</text>
+  <text x="150" y="415" font-size="17" fill="#e6edf5" text-anchor="middle">A judge model</text>
+
+  <!-- stages -->
+  <g>
+    <rect x="310" y="200" width="220" height="250" rx="18" fill="#0f2338" stroke="#60a5fa" stroke-width="2"/>
+    <circle cx="350" cy="238" r="20" fill="#60a5fa"/><text x="350" y="245" class="t" font-size="22" fill="#08121f" text-anchor="middle">1</text>
+    <text x="382" y="246" class="t" font-size="26" fill="#bfdbfe">SCREEN</text>
+    <text x="330" y="292" font-size="15.5" fill="#e6edf5">Load the suite</text>
+    <text x="330" y="318" font-size="15.5" fill="#e6edf5">Safety-check every</text>
+    <text x="330" y="340" font-size="15.5" fill="#e6edf5">prompt, once</text>
+    <text x="330" y="384" font-size="13.5" fill="#a5b4c8">Unsafe tasks are dropped</text>
+    <text x="330" y="404" font-size="13.5" fill="#a5b4c8">(adversarial ones are kept)</text>
+  </g>
+  <g>
+    <rect x="580" y="200" width="220" height="250" rx="18" fill="#0f2a28" stroke="#2dd4bf" stroke-width="2"/>
+    <circle cx="620" cy="238" r="20" fill="#2dd4bf"/><text x="620" y="245" class="t" font-size="22" fill="#04221f" text-anchor="middle">2</text>
+    <text x="652" y="246" class="t" font-size="26" fill="#99f6e4">CONTEST</text>
+    <text x="600" y="292" font-size="15.5" fill="#e6edf5">Every model answers</text>
+    <text x="600" y="314" font-size="15.5" fill="#e6edf5">every task, one model</text>
+    <text x="600" y="336" font-size="15.5" fill="#e6edf5">at a time</text>
+    <text x="600" y="384" font-size="13.5" fill="#a5b4c8">Then once more through</text>
+    <text x="600" y="404" font-size="13.5" fill="#a5b4c8">the router, to audit it</text>
+  </g>
+  <g>
+    <rect x="850" y="200" width="220" height="250" rx="18" fill="#2a1f0c" stroke="#fbbf24" stroke-width="2"/>
+    <circle cx="890" cy="238" r="20" fill="#fbbf24"/><text x="890" y="245" class="t" font-size="22" fill="#2a1f00" text-anchor="middle">3</text>
+    <text x="922" y="246" class="t" font-size="26" fill="#fde68a">GRADE</text>
+    <text x="870" y="292" font-size="15.5" fill="#e6edf5">Right answers first:</text>
+    <text x="870" y="314" font-size="15.5" fill="#e6edf5">tests, fields, numbers</text>
+    <text x="870" y="348" font-size="15.5" fill="#e6edf5">Judge for open-ended</text>
+    <text x="870" y="370" font-size="15.5" fill="#e6edf5">answers, twice</text>
+    <text x="870" y="404" font-size="13.5" fill="#a5b4c8">Disagreements → Reviews</text>
+  </g>
+  <g>
+    <rect x="1120" y="200" width="220" height="250" rx="18" fill="#2a1420" stroke="#f472b6" stroke-width="2"/>
+    <circle cx="1160" cy="238" r="20" fill="#f472b6"/><text x="1160" y="245" class="t" font-size="22" fill="#2a0715" text-anchor="middle">4</text>
+    <text x="1192" y="246" class="t" font-size="26" fill="#fbcfe8">REPORT</text>
+    <text x="1140" y="292" font-size="15.5" fill="#e6edf5">Scores and stars</text>
+    <text x="1140" y="314" font-size="15.5" fill="#e6edf5">per task type</text>
+    <text x="1140" y="348" font-size="15.5" fill="#e6edf5">Did the router pick</text>
+    <text x="1140" y="370" font-size="15.5" fill="#e6edf5">the best model?</text>
+    <text x="1140" y="404" font-size="13.5" fill="#a5b4c8">"Router regret" in points</text>
+  </g>
+
+  <!-- outputs -->
+  <rect x="1390" y="200" width="180" height="250" rx="18" fill="#2a2410" stroke="#ffd166" stroke-width="2"/>
+  <text x="1480" y="240" class="t" font-size="26" fill="#ffd166" text-anchor="middle">YOU GET</text>
+  <text x="1480" y="290" font-size="22" fill="#ffd166" text-anchor="middle" letter-spacing="2">★★★★☆</text>
+  <text x="1480" y="315" font-size="15" fill="#e6edf5" text-anchor="middle">Star ratings</text>
+  <text x="1480" y="360" font-size="15" fill="#e6edf5" text-anchor="middle">Router audit</text>
+  <text x="1480" y="400" font-size="15" fill="#e6edf5" text-anchor="middle">Recommended</text>
+  <text x="1480" y="420" font-size="15" fill="#e6edf5" text-anchor="middle">router config</text>
+
+  <!-- stage arrows -->
+  <line x1="262" y1="325" x2="306" y2="325" stroke="#5eead4" stroke-width="3" marker-end="url(#ar)"/>
+  <line x1="532" y1="325" x2="576" y2="325" stroke="#5eead4" stroke-width="3" marker-end="url(#ar)"/>
+  <line x1="802" y1="325" x2="846" y2="325" stroke="#5eead4" stroke-width="3" marker-end="url(#ar)"/>
+  <line x1="1072" y1="325" x2="1116" y2="325" stroke="#5eead4" stroke-width="3" marker-end="url(#ar)"/>
+  <line x1="1342" y1="325" x2="1386" y2="325" stroke="#ffd166" stroke-width="3" marker-end="url(#aa)"/>
+
+  <!-- framework path -->
+  <text x="60" y="532" class="t" font-size="22" fill="#93a3b8" letter-spacing="1">EVERY MODEL CALL · K9-AIF FRAMEWORK</text>
+  <line x1="690" y1="452" x2="690" y2="560" stroke="#5eead4" stroke-width="2.5" stroke-dasharray="6 6" marker-end="url(#ar)"/>
+  <line x1="960" y1="452" x2="960" y2="560" stroke="#fbbf24" stroke-width="2.5" stroke-dasharray="6 6" marker-end="url(#aa)"/>
+
+  <rect x="310" y="566" width="300" height="120" rx="18" fill="#101c30" stroke="#60a5fa" stroke-width="2"/>
+  <text x="460" y="612" class="m" font-size="22" fill="#bfdbfe" text-anchor="middle">llm_invoke</text>
+  <text x="460" y="644" font-size="14.5" fill="#a5b4c8" text-anchor="middle">one path for every call</text>
+  <text x="460" y="665" font-size="14.5" fill="#a5b4c8" text-anchor="middle">retries · trace events</text>
+
+  <rect x="660" y="556" width="400" height="140" rx="22" fill="#0f2a28" stroke="#2dd4bf" stroke-width="3"/>
+  <text x="860" y="606" class="t" font-size="30" fill="#e6fffb" text-anchor="middle">INTELLIGENT MODEL ROUTER</text>
+  <text x="860" y="640" font-size="15.5" fill="#99f6e4" text-anchor="middle">picks the model for each request</text>
+  <text x="860" y="664" font-size="14" fill="#a5b4c8" text-anchor="middle">pinned for contest runs · free choice in the audit</text>
+
+  <rect x="1110" y="566" width="460" height="120" rx="18" fill="#1a1530" stroke="#a78bfa" stroke-width="2"/>
+  <text x="1340" y="604" class="t" font-size="24" fill="#c4b5fd" text-anchor="middle">YOUR OLLAMA GPU</text>
+  <rect x="1132" y="622" width="130" height="40" rx="10" fill="#2a2150"/><text x="1197" y="648" class="m" font-size="14" fill="#e6edf5" text-anchor="middle">qwen3.8</text>
+  <rect x="1275" y="622" width="130" height="40" rx="10" fill="#2a2150"/><text x="1340" y="648" class="m" font-size="14" fill="#e6edf5" text-anchor="middle">gemma4</text>
+  <rect x="1418" y="622" width="130" height="40" rx="10" fill="#2a2150"/><text x="1483" y="648" class="m" font-size="14" fill="#e6edf5" text-anchor="middle">deepseek …</text>
+
+  <line x1="612" y1="626" x2="656" y2="626" stroke="#5eead4" stroke-width="3" marker-end="url(#ar)"/>
+  <line x1="1062" y1="626" x2="1106" y2="626" stroke="#5eead4" stroke-width="3" marker-end="url(#ar)"/>
+
+  <text x="60" y="736" font-size="14" fill="#6b7a8f">Runs on your machine · your data stays local · open source (Apache 2.0) · built on the K9-AIF framework</text>
+</svg>
+</body></html>
