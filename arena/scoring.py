@@ -140,6 +140,7 @@ def leaderboard(star_rows: List[Dict[str, Any]], thresholds: Dict[str, Any]) -> 
         board.append({
             "model": model,
             "score": round(score, 1),
+            "quality": round(statistics.mean(r["quality"] for r in rs), 1),
             "stars": stars_for(score, thresholds),
             "p50_ms": int(statistics.median(r["p50_ms"] for r in rs)),
             "p95_ms": max(r["p95_ms"] for r in rs),
@@ -233,6 +234,25 @@ def recommend_config(star_rows: List[Dict[str, Any]]) -> Tuple[str, List[str]]:
              + (f"; tied on quality, higher overall score {best[t].get('score')})" if best[t].get("tie_broken") else ")")
              for t in TASK_TYPES if t in best]
     return yaml.safe_dump(doc, sort_keys=False, default_flow_style=None), notes
+
+
+def verdict(board: List[Dict[str, Any]], margin: float = 2.0) -> Dict[str, Any]:
+    """How the match was won.
+    clear  — the top model's answer quality beats every other by more than `margin`
+    speed  — quality tied within `margin`; the overall score (speed, consistency,
+             refusals) separates them
+    draw   — quality and overall score both tied within `margin`"""
+    if not board:
+        return {"kind": "none", "tied": []}
+    if len(board) == 1:
+        return {"kind": "clear", "tied": [board[0]["model"]]}
+    top_q = max(b["quality"] for b in board)
+    tied = [b for b in board if top_q - b["quality"] <= margin]
+    if len(tied) == 1:
+        return {"kind": "clear", "tied": [tied[0]["model"]]}
+    scores = sorted((b["score"] for b in tied), reverse=True)
+    kind = "draw" if scores[0] - scores[1] <= margin else "speed"
+    return {"kind": kind, "tied": [b["model"] for b in tied]}
 
 
 def overall_winner(board: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:

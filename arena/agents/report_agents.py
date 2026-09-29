@@ -63,9 +63,12 @@ class ConfigRecommenderAgent(ArenaAgent):
         audit = payload.get("audited", {})
         yaml_text, notes = scoring.recommend_config(scored.get("rows", []))
         board = scored.get("leaderboard", [])
+        margin = float(self.config.get("arena", {}).get("scoring", {}).get("tie_margin", 2.0))
+        how = scoring.verdict(board, margin)
         report = {
             "leaderboard": board,
-            "winner": board[0] if board else None,
+            "winner": board[0] if board and how["kind"] != "draw" else None,
+            "verdict": {**how, "margin": margin},
             "judge": scored.get("judge", {}),
             "router": {"matches": audit.get("matches"), "types": audit.get("types"),
                        "avg_regret": audit.get("avg_regret")},

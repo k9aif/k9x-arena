@@ -38,6 +38,7 @@ arena:
       latency: 0.15
       refusal_accuracy: 0.10
     stars: {"5": 90, "4": 75, "3": 60, "2": 40}   # below 40 = 1 star
+    tie_margin: 2.0            # quality points within which top models count as tied
 
   judging:
     passes: 2                        # two independent judge passes

@@ -204,7 +204,7 @@ app.addEventListener('click', async (ev) => {
   const act = el.dataset.act;
   if (act === 'logout') { await api('/api/logout', { method: 'POST' }).catch(() => {}); S.me = null; location.hash = '#/login'; }
   if (act === 'start') startMatch();
-  if (act === 'celebrate' && S.lastReport) celebrate(S.lastReport.leaderboard, S.lastReport.judge);
+  if (act === 'celebrate' && S.lastReport) celebrate(S.lastReport.leaderboard, S.lastReport.judge, S.lastReport.verdict);
   if (act === 'close-celebration') closeCelebration();
   if (act === 'showall' || act === 'showtop') { S.showAllModels = act === 'showall'; renderLobby(); }
   if (['pause', 'cancel', 'resume'].includes(act)) {
@@ -392,17 +392,17 @@ async function renderResults(id) {
   const w = R.winner || {}; const J = R.judge || {}; const RT = R.router || {};
   const seenKey = `k9x-arena-celebrated-${id}`;
   let seen = false; try { seen = localStorage.getItem(seenKey) === '1'; } catch { /* storage blocked */ }
-  if (m.status === 'completed' && w.model && (!seen || S.celebrate === id)) {
+  if (m.status === 'completed' && R.leaderboard && R.leaderboard.length && (!seen || S.celebrate === id)) {
     S.celebrate = null; try { localStorage.setItem(seenKey, '1'); } catch { /* storage blocked */ }
-    setTimeout(() => celebrate(R.leaderboard, R.judge), 50);
+    setTimeout(() => celebrate(R.leaderboard, R.judge, R.verdict), 50);
   }
   app.innerHTML = header('results') + `<main class="page">
     <div class="row" style="align-items:flex-end"><div class="grow"><h1 class="display" style="margin:0;font-size:34px">Match #${id} · ${esc(m.suite_name)}</h1>
       <div class="muted" style="font-size:14px">${m.contenders.length} contenders · ${D.tasks.length} tasks · ${m.runs_per_task} runs · judge <span class="mono">${esc(m.judge)}</span> · ${dur(m.finished_at && m.started_at ? m.finished_at - m.started_at : 0)}</div></div>
-      ${w.model ? '<button class="btn" data-act="celebrate">Celebrate again</button>' : ''}<a class="btn" href="#/match/${id}">Replay view</a><a class="btn primary" href="#/lobby">Rematch</a></div>
+      ${R.leaderboard && R.leaderboard.length ? '<button class="btn" data-act="celebrate">Celebrate again</button>' : ''}<a class="btn" href="#/match/${id}">Replay view</a><a class="btn primary" href="#/lobby">Rematch</a></div>
     ${J.pending ? `<div class="banner info" style="margin-top:14px">${J.pending} judged answers await review, so these results are provisional. <a href="#/reviews">Review them</a>.</div>` : ''}
     <section class="kpis" aria-label="Summary">
-      <div class="kpi gold"><div class="muted" style="font-size:13px">Winner</div><div class="v"><span class="mono" style="font-size:20px;color:var(--amber)">${esc(w.model || '—')}</span><span class="big">${w.score != null ? w.score.toFixed(1) : ''}</span></div></div>
+      ${verdictTile(R)}
       <div class="kpi"><div class="muted" style="font-size:13px">Router picked the best model</div><div class="v"><span class="big">${RT.types ? `${RT.matches} of ${RT.types}` : '—'}</span><span class="muted">task types</span></div></div>
       <div class="kpi"><div class="muted" style="font-size:13px">Router regret</div><div class="v"><span class="big">${RT.avg_regret ?? '—'}</span><span class="muted">points lost on average</span></div></div>
       <div class="kpi"><div class="muted" style="font-size:13px">Judge disagreement</div><div class="v"><span class="big">${J.disagreements ?? 0} of ${J.judged ?? 0}</span><span class="muted">sent to review</span></div></div>
@@ -421,6 +421,13 @@ async function renderResults(id) {
           <ul class="muted" style="font-size:12.5px;margin:10px 0 0;padding-left:18px">${(R.recommended_notes || []).map((n) => `<li>${esc(n)}</li>`).join('')}</ul></section>
       </div>
     </div></main>`;
+}
+
+function verdictTile(R) {
+  const v = R.verdict || { kind: 'clear' }; const w = R.winner || (R.leaderboard || [])[0] || {};
+  if (v.kind === 'draw') return `<div class="kpi gold"><div class="muted" style="font-size:13px">Result</div><div class="v"><span class="big" style="color:var(--amber)">Draw</span><span class="muted">tied on quality and score</span></div></div>`;
+  const sub = v.kind === 'speed' ? '<div class="muted" style="font-size:12px;margin-top:2px">Quality tied · decided on speed &amp; consistency</div>' : '';
+  return `<div class="kpi gold"><div class="muted" style="font-size:13px">Winner</div><div class="v"><span class="mono" style="font-size:20px;color:var(--amber)">${esc(w.model || '—')}</span><span class="big">${w.score != null ? w.score.toFixed(1) : ''}</span></div>${sub}</div>`;
 }
 
 // ── task drill-down ───────────────────────────────────────────────────────────
@@ -499,7 +506,9 @@ function closeCelebration() {
   document.removeEventListener('keydown', celebrationKey);
 }
 function celebrationKey(ev) { if (ev.key === 'Escape') closeCelebration(); }
-function celebrate(board, judge) {
+function celebrate(board, judge, verdict) {
+  const kind = (verdict && verdict.kind) || 'clear';
+  const tied = (verdict && verdict.tied) || [];
   if (!board || !board.length) return;
   document.getElementById('celebration')?.remove();
   const [w, ...rest] = board;
@@ -518,9 +527,13 @@ function celebrate(board, judge) {
         <path d="M34 24H18c0 16 8 24 18 26M86 24h16c0 16-8 24-18 26" fill="none" stroke="url(#gold)" stroke-width="6" stroke-linecap="round"/>
         <rect x="54" y="70" width="12" height="16" fill="url(#gold)"/><rect x="40" y="86" width="40" height="10" rx="3" fill="url(#gold)"/><rect x="34" y="96" width="52" height="10" rx="3" fill="#b8860b"/>
         <path d="M60 30l3.5 7 7.7 1.1-5.6 5.4 1.3 7.7-6.9-3.6-6.9 3.6 1.3-7.7-5.6-5.4 7.7-1.1z" fill="#fff8d6"/></svg></div>
-    <div class="cele-label">${!judge || !judge.judged ? 'AND THE WINNER IS' : judge.disagreements ? 'AND THE WINNER, BY SPLIT DECISION' : 'AND THE WINNER, BY UNANIMOUS DECISION'}</div>
+    ${kind === 'draw' ? `<div class="cele-label">IT'S A DRAW</div>
+      <h2 id="win-title" class="cele-name" style="font-size:24px">${tied.map(esc).join(' · ')}</h2>
+      <div class="muted" style="margin-top:6px">Tied on answer quality and on overall score (within ${verdict.margin} points). Try a harder suite.</div>` : `
+    <div class="cele-label">${kind === 'speed' ? 'QUALITY DRAW · DECIDED ON SPEED &amp; CONSISTENCY' : !judge || !judge.judged ? 'AND THE WINNER IS' : judge.disagreements ? 'AND THE WINNER, BY SPLIT DECISION' : 'AND THE WINNER, BY UNANIMOUS DECISION'}</div>
     <h2 id="win-title" class="cele-name">${esc(w.model)}</h2>
     <div class="cele-score"><span class="display">${w.score.toFixed(1)}</span><span class="stars">${starText(w.stars)}</span></div>
+    ${kind === 'speed' ? `<div class="muted" style="margin-top:6px;font-size:13.5px">Answer quality tied with ${tied.filter((t) => t !== w.model).map(esc).join(', ')} (within ${verdict.margin} points).</div>` : ''}`}
     ${rest.length ? `<div class="cele-rest">${rest.map((b) => `<span><b class="r${b.rank}">${b.rank}</b> <span class="mono">${esc(b.model)}</span> · ${b.score.toFixed(1)}</span>`).join('')}</div>` : ''}
   </div>`;
   el.addEventListener('click', (ev) => { if (ev.target === el || ev.target.closest('[data-act="close-celebration"]')) closeCelebration(); });

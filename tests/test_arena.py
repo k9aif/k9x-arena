@@ -336,3 +336,11 @@ def test_quality_tie_broken_by_overall_score():
                                               consistency=100, latency=100, refusal_accuracy=100, stars=5,
                                               pending=0) for r in rows])
     assert "tied on quality" in notes[0]
+
+
+def test_verdict_clear_speed_and_draw():
+    b = lambda m, q, s: {"model": m, "quality": q, "score": s}
+    assert scoring.verdict([b("a", 95, 90), b("b", 80, 85)])["kind"] == "clear"
+    v = scoring.verdict([b("a", 100, 100), b("b", 100, 89), b("c", 91, 85)])
+    assert v["kind"] == "speed" and v["tied"] == ["a", "b"]
+    assert scoring.verdict([b("a", 100, 95), b("b", 99, 94)])["kind"] == "draw"
