@@ -364,8 +364,24 @@ function drawOctagon() {
     return { tag, fx, fy, active, lane, state };
   });
   const judgeActive = cur.model === 'judge';
+  const phase = m.status === 'completed' ? 'completed' : (m.phase || '');
+  const guardianActive = phase === 'screening' || cur.model === 'guardian';
+  const routing = cur.model === 'router' || phase === 'router';
+  const scoringNow = phase === 'scoring';
+  const matSub = routing ? 'routing by task type' : scoringNow ? 'scoring…' : 'Intelligent Model Router';
+  const cageLabel = cur.model === 'guardian' ? `GRANITE GUARDIAN · SAFETY PASS · ${cur.task_id} (${short(cur.for_model || '')})`
+    : phase === 'screening' ? 'GRANITE GUARDIAN · SCREENING' : 'GRANITE GUARDIAN · CAGE';
   const target = fighters.find((f) => f.active) || (judgeActive ? { fx: cx, fy: cy + R + 70 } : null);
-  const beams = target ? `<line x1="${cx}" y1="${cy}" x2="${target.fx}" y2="${target.fy}" class="beam-out"/><line x1="${target.fx + 6}" y1="${target.fy + 6}" x2="${cx + 6}" y2="${cy + 6}" class="beam-back"/>` : '';
+  // beams start at the mat's edge, not its center, so they never cross the K9X text
+  let beams = '';
+  if (target) {
+    const dx = target.fx - cx, dy = target.fy - cy, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len, sx = cx + ux * 96, sy = cy + uy * 96;
+    const ox = -uy * 6, oy = ux * 6;  // offset the return stream sideways
+    const ex = target.fx - ux * 36, ey = target.fy - uy * 36;
+    beams = `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}" class="beam-out"/>`
+      + `<line x1="${ex + ox}" y1="${ey + oy}" x2="${sx + ox}" y2="${sy + oy}" class="beam-back"/>`;
+  }
   const fighterSvg = fighters.map((f) => `<g class="fighter ${f.active ? 'active' : ''}">
       ${f.active ? `<circle cx="${f.fx}" cy="${f.fy}" r="70" class="spot"/>` : ''}
       <circle cx="${f.fx}" cy="${f.fy}" r="${f.active ? 34 : 28}" class="corner"/>
@@ -385,13 +401,13 @@ function drawOctagon() {
       </defs>
       <rect width="${W}" height="${H}" fill="#04060d"/>
       <g aria-hidden="true">${crowd.join('')}</g>
-      <polygon points="${oct(R + 26)}" fill="url(#mesh)" stroke="#2dd4bf" stroke-opacity=".55" stroke-width="3" class="cage"/>
+      <polygon points="${oct(R + 26)}" fill="url(#mesh)" stroke="${cur.model === 'guardian' ? '#ffd166' : '#2dd4bf'}" stroke-opacity=".55" stroke-width="3" class="cage ${guardianActive ? 'active' : ''}"/>
       <polygon points="${oct(R)}" fill="url(#floor)" stroke="#1f4d45" stroke-width="2"/>
       <ellipse cx="${cx}" cy="${cy}" rx="${R}" ry="${R * 0.9}" fill="url(#light)"/>
-      <text x="${cx}" y="${cy - R - 40}" class="guardlabel" text-anchor="middle">GRANITE GUARDIAN · CAGE</text>
-      <circle cx="${cx}" cy="${cy}" r="92" fill="#0b2226" stroke="#2dd4bf" stroke-opacity=".5" stroke-width="2" class="mat"/>
+      <text x="${cx}" y="${cy - R - 40}" class="guardlabel ${cur.model === 'guardian' ? 'amber' : ''}" text-anchor="middle">${esc(cageLabel)}</text>
+      <circle cx="${cx}" cy="${cy}" r="92" fill="#0b2226" stroke="#2dd4bf" stroke-opacity=".5" stroke-width="2" class="mat ${routing || scoringNow ? 'busy' : ''}"/>
       <text x="${cx}" y="${cy - 4}" class="matlogo" text-anchor="middle">K9X</text>
-      <text x="${cx}" y="${cy + 22}" class="matsub" text-anchor="middle">Intelligent Model Router</text>
+      <text x="${cx}" y="${cy + 22}" class="matsub" text-anchor="middle">${esc(matSub)}</text>
       ${beams}
       ${fighterSvg}
       <g class="judges ${judgeActive ? 'active' : ''}"><rect x="${cx - 110}" y="${cy + R + 48}" width="220" height="44" rx="10"/>
@@ -401,9 +417,10 @@ function drawOctagon() {
       <div class="row">${live ? '<span class="live"><span class="dot"></span>LIVE</span>' : statusBadge(m.status)}${round ? `<span class="muted" style="font-size:13px">${round}</span>` : ''}</div>
       <h1>THE K9X OCTAGON<br><span style="font-size:22px;color:var(--text-2)">Match #${m.id} · ${esc(m.suite_name)}</span></h1>
       <div class="bar" style="height:6px"><div style="width:${tot ? (100 * ans) / tot : 0}%;box-shadow:0 0 12px var(--teal)"></div></div>
-      <span class="muted" style="font-size:13px">${ans} of ${tot} answers · ${esc(m.phase || '')}</span>
+      <span class="muted" style="font-size:13px">${ans} of ${tot} answers</span>
+      <div class="phasestrip" aria-label="Match phases">${PHASES.map(([k, label]) => { const st = phaseState(m, k); return `<span class="ps ${st}">${st === 'done' ? '✓ ' : ''}${label}</span>`; }).join('')}</div>
       <div class="box"><span style="font-size:12px;color:var(--teal-2);letter-spacing:1px">NOW</span>
-        ${cur.model ? `<span class="mono" style="font-size:15px">${esc(cur.model === 'judge' ? m.judge + ' (judging)' : cur.model === 'router' ? 'K9ModelRouter' : cur.model)}</span><span style="font-size:13px;color:var(--text-2)">${esc(cur.task_id)} · ${esc(cur.title)}</span>` : `<span class="muted" style="font-size:13px">${m.status === 'completed' ? 'Fight over' : 'Between rounds'}</span>`}</div>
+        ${cur.model ? `<span class="mono" style="font-size:15px">${esc(cur.model === 'judge' ? m.judge + ' (judging)' : cur.model === 'router' ? 'K9ModelRouter (router mode)' : cur.model === 'guardian' ? 'Granite Guardian (safety pass on ' + (cur.for_model || '') + ')' : cur.model)}</span><span style="font-size:13px;color:var(--text-2)">${esc(cur.task_id)} · ${esc(cur.title)}</span>` : `<span class="muted" style="font-size:13px">${m.status === 'completed' ? 'Fight over' : phase === 'grading' ? 'Grading answers against right answers' : phase === 'scoring' ? 'Scoring the fight' : 'Between rounds'}</span>`}</div>
       <div class="row"><div class="viewswitch" role="group" aria-label="View"><a href="#/match/${m.id}">Lanes</a><a href="#/match/${m.id}/octagon" aria-current="page">Octagon</a></div>${matchControls(m)}</div>
     </aside>
     <aside class="hud right" aria-label="Scores"><span class="muted" style="font-size:12px;letter-spacing:1px">SCORECARD · AVERAGE QUALITY</span>${board}</aside>

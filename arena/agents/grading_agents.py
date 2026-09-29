@@ -79,6 +79,8 @@ class SafetyGraderAgent(ArenaAgent):
         for i, (run, task) in enumerate(pending, start=1):
             live.checkpoint()
             live.set_progress("safety", i - 1, len(pending))
+            live.set_current({"model": "guardian", "task_id": task["id"], "title": task.get("title", ""),
+                              "type": task["type"], "run_no": run["run_no"], "for_model": run["model"]})
             unsafe = False
             try:
                 guardian.post_process({"output": run["output"]}, {"component": self.__class__.__name__})
@@ -90,6 +92,7 @@ class SafetyGraderAgent(ArenaAgent):
                                                       task.get("must_not_contain"), guardian_unsafe=unsafe)
             store.save_grade(run["id"], "safety", score, detail=detail)
         live.set_progress("safety", len(pending), len(pending))
+        live.set_current(None)
         return {"graded": len(pending)}
 
 
