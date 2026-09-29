@@ -42,7 +42,7 @@ ollama pull granite4.1-guardian:8b   # Guardian is mandatory
 pulled or doesn't answer, the judge isn't pulled, or no contender is pulled
 (run it alone with `python -m arena.preflight`).
 
-Open `http://localhost:8110` and sign in (`demo` / `demo` by default; set
+Open `http://localhost:8111` and sign in (`demo` / `demo` by default; set
 `ARENA_ADMIN_PASSWORD` in `.env` to enable the admin login). Start with the
 **Quick Check** suite (6 tasks) to see a full match in minutes, then run
 **Claims Ops Starter** (30 tasks).
@@ -74,6 +74,19 @@ capabilities.
 Every model call goes through the framework's `llm_invoke` and K9ModelRouter.
 To pin a task to one contender, each contender gets its own catalog entry with
 a unique capability, so even forced runs are routed by the router itself.
+
+## Container (Ubuntu / Podman)
+
+Like the other K9X components, `ubuntu/` builds and runs a single container on
+port **8111**, reading your `.env` at start. Match history lives in
+`~/containers/volumes/k9x-arena/runtime` on the host, so it survives rebuilds.
+
+```bash
+./ubuntu/build-run.sh all     # build + start
+./ubuntu/build-run.sh logs    # pre-flight results appear first
+```
+
+If the pre-flight fails, the container stops and the log says why.
 
 ## Your own tasks
 

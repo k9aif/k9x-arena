@@ -1,0 +1,15 @@
+# Build context for ubuntu/Containerfile is this directory.
+# Secrets are passed at run time (--env-file), never baked into the image.
+.env
+.env.*
+!.env.example
+
+# VCS, virtualenvs, caches, local data
+.git
+.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+runtime
+logs
+images

@@ -15,6 +15,6 @@ if [ ! -f .env ]; then
 fi
 set -a; . ./.env; set +a
 python -m arena.preflight || exit 1
-PORT="${ARENA_PORT:-8110}"
+PORT="${ARENA_PORT:-8111}"
 echo "K9X Arena → http://localhost:${PORT}"
 exec uvicorn arena.api:app --host 0.0.0.0 --port "$PORT"

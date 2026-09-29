@@ -25,7 +25,8 @@ OK, WARN, FAIL = "ok", "warn", "fail"
 def check(tags_timeout: float = 5.0, guardian_timeout: float = 90.0) -> List[Tuple[str, str]]:
     """Returns [(level, message)]. No side effects."""
     results: List[Tuple[str, str]] = []
-    if not (ROOT / ".env").exists():
+    # A container gets its settings via --env-file, so the environment itself counts.
+    if not (ROOT / ".env").exists() and not os.environ.get("OLLAMA_BASE_URL"):
         return [(FAIL, "No .env file. Copy .env.example to .env and set OLLAMA_BASE_URL and your models.")]
 
     url = ollama_base_url()
@@ -98,7 +99,7 @@ def main() -> int:
     failed = [m for lvl, m in results if lvl == FAIL]
     if failed:
         print(f"\nPre-flight failed ({len(failed)} problem{'s' if len(failed) > 1 else ''}). Fix .env or the "
-              "Ollama host, then run ./run.sh again.")
+              "Ollama host, then start the arena again.")
         return 1
     print("\nPre-flight passed.")
     return 0
