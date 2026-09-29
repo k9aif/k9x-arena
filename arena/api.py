@@ -460,6 +460,22 @@ def task_detail(match_id: int, task_id: str, u=Depends(user)):
     }
 
 
+@app.post("/api/matches/{match_id}/rescore")
+def rescore_match(match_id: int, u=Depends(user)):
+    """Rerun the ReportSquad from stored grades: stars, the router test and
+    the config. No model is called, so it takes seconds -- and gives matches
+    from before the router test their router test."""
+    m = store.get_match(match_id)
+    if not m:
+        raise HTTPException(404, "match not found")
+    if m["status"] != "completed":
+        raise HTTPException(409, "only a completed match can be rescored")
+    if engine.is_busy():
+        raise HTTPException(409, f"match {live.running_match()} is running; rescore when it finishes")
+    engine.rescore(match_id)
+    return {"ok": True}
+
+
 class Decision(BaseModel):
     score: float = Field(ge=0, le=100)
 

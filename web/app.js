@@ -225,6 +225,10 @@ app.addEventListener('click', async (ev) => {
   const act = el.dataset.act;
   if (act === 'logout') { await api('/api/logout', { method: 'POST' }).catch(() => {}); S.me = null; location.hash = '#/login'; }
   if (act === 'start') startMatch();
+  if (act === 'rescore') {
+    el.disabled = true; el.textContent = 'Running…';
+    try { await api(`/api/matches/${el.dataset.id}/rescore`, { method: 'POST' }); route(); } catch (e) { alert(e.message); el.disabled = false; el.textContent = 'Run the router test'; }
+  }
   if (act === 'celebrate' && S.lastReport) celebrate(S.lastReport.leaderboard, S.lastReport.judge, S.lastReport.verdict);
   if (act === 'close-celebration') closeCelebration();
   if (act === 'showall' || act === 'showtop') { S.showAllModels = act === 'showall'; renderLobby(); }
@@ -489,7 +493,7 @@ ${routerKpis(RT, R.router)}
         <section class="panel"><h2>Tasks</h2><table class="grid"><thead><tr><th>Task</th><th>Type</th><th>Title</th>${models.map((mdl) => `<th class="mono" style="text-transform:none">${esc(short(mdl))}</th>`).join('')}</tr></thead><tbody>${tasks}</tbody></table></section>
       </div>
       <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
-        ${RT ? routerPanel(RT, m) : `<section class="panel"><h2>Router audit</h2><p class="muted" style="font-size:12.5px;margin:0 0 8px">Did K9ModelRouter send each task type to the model that scored best? (matches before the router test)</p>
+        ${RT ? routerPanel(RT, m) : `<section class="panel"><div class="row"><h2 class="grow" style="margin:0">Router audit</h2>${m.status === 'completed' ? `<button class="btn small primary" data-act="rescore" data-id="${m.id}" title="Reruns the report from the stored grades. No model is called.">Run the router test</button>` : ''}</div><p class="muted" style="font-size:12.5px;margin:8px 0">This match ran before the router test, so it shows the old audit. The router test needs no GPU: it reuses this match's scores.</p>
           ${audit ? `<table class="grid"><tbody>${audit}</tbody></table>` : `<div class="empty">${esc((m.settings && m.settings.router_note) || 'Router mode was off for this match.')}</div>`}</section>`}
         <section class="panel teal"><div class="row"><h2 class="grow" style="margin:0">Recommended router config</h2><button class="btn small" data-act="copy">Copy</button><a class="btn small primary" href="/api/matches/${id}/config.yaml">Download</a></div>
           <pre class="yaml" id="yaml" style="margin-top:10px">${esc(R.recommended_yaml || '')}</pre>

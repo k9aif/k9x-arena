@@ -497,3 +497,38 @@ def test_ui_script_defines_every_helper_it_calls():
                 "cancelAnimationFrame", "getComputedStyle", "function", "async", "await", "new",
                 "record_feedback"}  # prose on the Architecture page, inside a nested template
     assert not (called - defined - builtins), called - defined - builtins
+
+
+def test_rescore_refused_unless_completed_and_idle(client, monkeypatch):
+    import arena.api as api_mod
+    from arena import store
+    client.post("/api/login", json={"username": "demo", "password": "demo"})
+    mid = store.create_match("built-in:quick_check", "Quick Check", ["a:1", "b:2"], "j:3", 1, True, {})
+    assert client.post(f"/api/matches/{mid}/rescore").status_code == 409        # not completed
+    store.update_match(mid, status="completed")
+    monkeypatch.setattr(api_mod.engine, "is_busy", lambda: True)
+    assert client.post(f"/api/matches/{mid}/rescore").status_code == 409        # a match is running
+    monkeypatch.setattr(api_mod.engine, "is_busy", lambda: False)
+    called = []
+    monkeypatch.setattr(api_mod.engine, "rescore", lambda m: called.append(m))
+    assert client.post(f"/api/matches/{mid}/rescore").status_code == 200 and called == [mid]
+    assert client.post("/api/matches/99999/rescore").status_code == 404
+
+
+def test_rescore_gives_an_old_match_its_router_test():
+    """End to end through ArenaRouter -> ArenaOrchestrator -> ReportSquad, no model call."""
+    from arena import engine, store
+    from tests.test_arena import _clustered_match
+    tasks, quality = _clustered_match()
+    mid = store.create_match("built-in:x", "X", ["sql", "prover"], "j:1", 1, True, {})
+    store.save_tasks(mid, tasks)
+    for t in tasks:
+        for model, v in quality[t["id"]].items():
+            store.save_run(mid, "forced", model, "a", t["id"], 1, "answer", int(v["ms"]), False, None)
+    for run in store.get_runs(mid, "forced"):
+        store.save_grade(run["id"], "reasoning", quality[run["task_id"]][run["model"]]["q"])
+    store.update_match(mid, status="completed")
+    engine.rescore(mid)
+    rt = store.get_report(mid)["router_test"]
+    assert rt["available"] and rt["strategies"]["learned"]["best_picks"] == 24
+    assert store.get_match(mid)["status"] == "completed"
