@@ -40,7 +40,7 @@ function pills() {
   return `
     <span class="pill ${s.ollama.reachable ? '' : 'off'}" title="${esc(s.ollama.url)}"><span class="dot"></span>Ollama ${s.ollama.reachable ? '' : 'offline'}</span>
     <span class="pill guard ${g.live ? '' : 'off'}" title="${esc(g.detail || g.model)}">${SHIELD}Guardian ${g.live ? 'Live' : 'Offline'}</span>
-    <span class="pill gpu" title="Model loaded on the GPU now">GPU: ${esc((s.gpu && s.gpu.length) ? s.gpu.join(', ') : 'idle')}</span>`;
+    <span class="pill gpu" title="Model loaded on the GPU now"> Model: ${esc((s.gpu && s.gpu.length) ? s.gpu.join(', ') : 'idle')}</span>`;
 }
 function header(active) {
   const running = S.status && S.status.running_match;
