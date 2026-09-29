@@ -184,3 +184,60 @@ def test_upload_precheck_rejects_bad_files(client):
 def test_only_admin_can_delete(client):
     client.post("/api/login", json={"username": "demo", "password": "demo"})
     assert client.delete("/api/matches/999").status_code == 403
+
+
+# ── pre-flight ────────────────────────────────────────────────────────────────
+class _Resp:
+    def __init__(self, data=None, ok=True):
+        self._data, self._ok = data or {}, ok
+
+    def raise_for_status(self):
+        if not self._ok:
+            raise RuntimeError("HTTP 500")
+
+    def json(self):
+        return self._data
+
+
+def _levels(results):
+    return [lvl for lvl, _ in results]
+
+
+def test_preflight_fails_when_ollama_unreachable(monkeypatch):
+    from arena import preflight
+
+    def boom(*a, **k):
+        raise ConnectionError("refused")
+    monkeypatch.setattr(preflight.requests, "get", boom)
+    monkeypatch.setattr(preflight, "ROOT", preflight.ROOT)  # .env presence checked below
+    if not (preflight.ROOT / ".env").exists():
+        pytest.skip("no .env in this checkout")
+    results = preflight.check()
+    assert results[-1][0] == preflight.FAIL and "not reachable" in results[-1][1]
+
+
+def test_preflight_fails_without_guardian(monkeypatch):
+    from arena import preflight
+    if not (preflight.ROOT / ".env").exists():
+        pytest.skip("no .env in this checkout")
+    monkeypatch.setenv("ARENA_CONTESTANTS", "m1")
+    monkeypatch.setenv("ARENA_JUDGE_MODEL", "j1")
+    monkeypatch.setattr(preflight.requests, "get",
+                        lambda *a, **k: _Resp({"models": [{"name": "m1"}, {"name": "j1"}]}))
+    results = preflight.check()
+    assert any(lvl == preflight.FAIL and "Granite Guardian" in msg for lvl, msg in results)
+
+
+def test_preflight_passes_with_everything_pulled(monkeypatch):
+    from arena import preflight
+    if not (preflight.ROOT / ".env").exists():
+        pytest.skip("no .env in this checkout")
+    monkeypatch.setenv("ARENA_CONTESTANTS", "m1,m2")
+    monkeypatch.setenv("ARENA_JUDGE_MODEL", "j1")
+    monkeypatch.setenv("ARENA_GUARDIAN_MODEL", "g1")
+    monkeypatch.setenv("ARENA_ROUTER_GENERAL_MODEL", "m1")
+    monkeypatch.setenv("ARENA_ROUTER_REASONING_MODEL", "m2")
+    names = [{"name": n} for n in ("m1", "m2", "j1", "g1")]
+    monkeypatch.setattr(preflight.requests, "get", lambda *a, **k: _Resp({"models": names}))
+    monkeypatch.setattr(preflight.requests, "post", lambda *a, **k: _Resp({"response": "ok"}))
+    assert preflight.FAIL not in _levels(preflight.check())

@@ -37,6 +37,11 @@ ollama pull granite4.1-guardian:8b   # Guardian is mandatory
 ./run.sh                             # installs requirements (k9-aif from PyPI) and starts
 ```
 
+`./run.sh` first runs a pre-flight check and stops with a clear message if
+`.env` is missing, the Ollama host is unreachable, Granite Guardian isn't
+pulled or doesn't answer, the judge isn't pulled, or no contender is pulled
+(run it alone with `python -m arena.preflight`).
+
 Open `http://localhost:8110` and sign in (`demo` / `demo` by default; set
 `ARENA_ADMIN_PASSWORD` in `.env` to enable the admin login). Start with the
 **Quick Check** suite (6 tasks) to see a full match in minutes, then run
